@@ -1,0 +1,432 @@
+#ifndef AMBIENTLIGHTINGTHREAD_H
+#define AMBIENTLIGHTINGTHREAD_H
+
+#include "Observer.h"
+#include "configuration.h"
+#include "detect/ScanI2C.h"
+#include "sleep.h"
+#include <Arduino.h>
+
+#ifdef HAS_NCP5623
+#include <Wire.h>
+
+#include <NCP5623.h>
+#endif
+
+#ifdef HAS_LP5562
+#include <graphics/NomadStarLED.h>
+#endif
+
+#ifdef HAS_NEOPIXEL
+#include <graphics/NeoPixel.h>
+#if defined(ESP32)
+#include <esp_pm.h>
+#endif
+#if HAS_SCREEN
+#include <graphics/Screen.h>
+#endif
+#endif
+
+#ifdef UNPHONE
+#include "unPhone.h"
+extern unPhone unphone;
+#endif
+
+class AmbientLightingThread : public concurrency::OSThread
+{
+    friend class StatusLEDModule; // Let the LEDStatusModule trigger the ambient lighting for notifications and battery status.
+    friend class ExternalNotificationModule; // Let the ExternalNotificationModule trigger the ambient lighting for notifications.
+
+  private:
+#ifdef HAS_NCP5623
+    NCP5623 rgb;
+#endif
+
+#ifdef HAS_LP5562
+    LP5562 rgbw;
+#endif
+
+  public:
+    explicit AmbientLightingThread(ScanI2C::DeviceType type) : OSThread("AmbientLighting")
+    {
+        // Keep this thread responsive so LED state transitions are applied promptly.
+        setInterval(25);
+        canSleep = false;
+
+        notifyDeepSleepObserver.observe(&notifyDeepSleep); // Let us know when shutdown() is issued.
+
+// Enables Ambient Lighting by default if conditions are meet.
+#ifdef HAS_RGB_LED
+#ifdef ENABLE_AMBIENTLIGHTING
+        moduleConfig.ambient_lighting.led_state = true;
+#endif
+#endif
+#if AMBIENT_LIGHTING_TEST
+        // define to enable test
+        moduleConfig.ambient_lighting.led_state = true;
+        moduleConfig.ambient_lighting.current = 10;
+        // Default to a color based on our node number
+        moduleConfig.ambient_lighting.red = (myNodeInfo.my_node_num & 0xFF0000) >> 16;
+        moduleConfig.ambient_lighting.green = (myNodeInfo.my_node_num & 0x00FF00) >> 8;
+        moduleConfig.ambient_lighting.blue = myNodeInfo.my_node_num & 0x0000FF;
+#endif
+#if defined(HAS_NCP5623) || defined(HAS_LP5562)
+        _type = type;
+        if (_type == ScanI2C::DeviceType::NONE) {
+            LOG_DEBUG("AmbientLighting Disable due to no RGB leds found on I2C bus");
+            disable();
+            return;
+        }
+#endif
+#ifdef HAS_RGB_LED
+        LOG_DEBUG("AmbientLighting init");
+#ifdef HAS_NCP5623
+        if (_type == ScanI2C::NCP5623) {
+            rgb.begin();
+#endif
+#ifdef HAS_LP5562
+            if (_type == ScanI2C::LP5562) {
+                rgbw.begin();
+#endif
+#ifdef RGBLED_RED
+                pinMode(RGBLED_RED, OUTPUT);
+                pinMode(RGBLED_GREEN, OUTPUT);
+                pinMode(RGBLED_BLUE, OUTPUT);
+#endif
+#ifdef HAS_NEOPIXEL
+                pixels.begin(); // Initialise the pixel(s)
+                pixels.clear(); // Set all pixel colors to 'off'
+                pixels.setBrightness(0); //moduleConfig.ambient_lighting.current
+#if defined(ESP32)
+                if (_neoPixelApbLock == nullptr) {
+                    esp_err_t err = esp_pm_lock_create(ESP_PM_APB_FREQ_MAX, 0, "neopixel", &_neoPixelApbLock);
+                    if (err != ESP_OK) {
+                        _neoPixelApbLock = nullptr;
+                    }
+                }
+#endif
+#endif
+                // setLighting();
+#endif
+#if defined(HAS_NCP5623) || defined(HAS_LP5562)
+            }
+#endif
+        }
+
+        bool isFlashlightModeActive() const { return _flashlightOverrideActive; }
+
+        void setFlashlightMode(bool enabled)
+        {
+            _flashlightOverrideActive = enabled;
+            if (enabled) {
+#if HAS_SOS
+                _sosOverrideActive = false;
+#endif
+                setLighting(255, 255, 255, 255);
+            } else {
+                // if (moduleConfig.ambient_lighting.led_state) {
+                //     setLighting();
+                // } else {
+                    setLightingOff(nullptr);
+                // }
+            }
+        }
+
+#if HAS_SOS
+        bool isSOSModeActive() const { return _sosOverrideActive; }
+
+        void setSOSMode(bool enabled)
+        {
+            _sosOverrideActive = enabled;
+            _sosPatternIndex = 0;
+            _sosLedOn = false;
+            if (enabled) {
+                _flashlightOverrideActive = false;
+                _sosLastToggle = millis();
+            } else {
+                setLightingOff(nullptr);
+            }
+        }
+#endif
+
+      protected:
+        int32_t runOnce() override
+        {
+#ifdef HAS_RGB_LED
+#if HAS_SOS
+            if (_sosOverrideActive) {
+                handleSOSBlink();
+                return 25;
+            }
+#endif
+            if (_flashlightOverrideActive) {
+                return 250;
+            }
+#ifdef HAS_NEOPIXEL
+            if (!_bootMarqueeDone) {
+                bool bootAnimationActive = false;
+#if HAS_SCREEN
+                if (screen) {
+                    bootAnimationActive = !screen->isShowingNormalScreen();
+                } else
+#endif
+                {
+                    bootAnimationActive = (static_cast<int32_t>(_bootEffectUntil - millis()) > 0);
+                }
+
+                if (bootAnimationActive) {
+                    showNotificationMarquee();
+                    return 16;
+                }
+                setLightingOff(NULL);
+                _bootMarqueeDone = true;
+            }
+#endif
+#if defined(HAS_NCP5623) || defined(HAS_LP5562)
+            if ((_type == ScanI2C::NCP5623 || _type == ScanI2C::LP5562) && moduleConfig.ambient_lighting.led_state) {
+#endif
+                // setLighting(moduleConfig.ambient_lighting.current, moduleConfig.ambient_lighting.red,
+                //             moduleConfig.ambient_lighting.green, moduleConfig.ambient_lighting.blue);
+                return 30000; // Poll faster so lighting state updates feel immediate.
+#if defined(HAS_NCP5623) || defined(HAS_LP5562)
+            }
+#endif
+#endif
+            return disable();
+        }
+
+        // When shutdown() is issued, setLightingOff will be called.
+        CallbackObserver<AmbientLightingThread, void *> notifyDeepSleepObserver =
+            CallbackObserver<AmbientLightingThread, void *>(this, &AmbientLightingThread::setLightingOff);
+
+      private:
+        ScanI2C::DeviceType _type = ScanI2C::DeviceType::NONE;
+        uint32_t _bootEffectUntil = millis() + 3200;
+        bool _bootMarqueeDone = false;
+        bool _ledOff = false;
+        bool _flashlightOverrideActive = false;
+#if HAS_SOS
+        bool _sosOverrideActive = false;
+        uint8_t _sosPatternIndex = 0;
+        uint32_t _sosLastToggle = 0;
+        bool _sosLedOn = false;
+#endif
+#if defined(HAS_NEOPIXEL) && defined(ESP32)
+        esp_pm_lock_handle_t _neoPixelApbLock = nullptr;
+#endif
+
+        void acquireNeoPixelClockLock()
+        {
+#if defined(HAS_NEOPIXEL) && defined(ESP32)
+            if (_neoPixelApbLock != nullptr) {
+                esp_pm_lock_acquire(_neoPixelApbLock);
+            }
+#endif
+        }
+
+        void releaseNeoPixelClockLock()
+        {
+#if defined(HAS_NEOPIXEL) && defined(ESP32)
+            if (_neoPixelApbLock != nullptr) {
+                esp_pm_lock_release(_neoPixelApbLock);
+            }
+#endif
+        }
+
+        // Turn RGB lighting off, is used in junction to shutdown()
+        int setLightingOff(void *unused)
+        {
+#ifdef HAS_NCP5623
+            rgb.setCurrent(0);
+            rgb.setRed(0);
+            rgb.setGreen(0);
+            rgb.setBlue(0);
+            LOG_INFO("OFF: NCP5623 Ambient lighting");
+#endif
+#ifdef HAS_LP5562
+            rgbw.setCurrent(0);
+            rgbw.setRed(0);
+            rgbw.setGreen(0);
+            rgbw.setBlue(0);
+            rgbw.setWhite(0);
+            LOG_INFO("OFF: LP5562 Ambient lighting");
+#endif
+#ifdef HAS_NEOPIXEL
+            pixels.clear();
+            acquireNeoPixelClockLock();
+            pixels.show();
+            releaseNeoPixelClockLock();
+            LOG_INFO("OFF: NeoPixel Ambient lighting");
+#endif
+#ifdef RGBLED_CA
+            analogWrite(RGBLED_RED, 255 - 0);
+            analogWrite(RGBLED_GREEN, 255 - 0);
+            analogWrite(RGBLED_BLUE, 255 - 0);
+            LOG_INFO("OFF: Ambient light RGB Common Anode");
+#elif defined(RGBLED_RED)
+        analogWrite(RGBLED_RED, 0);
+        analogWrite(RGBLED_GREEN, 0);
+        analogWrite(RGBLED_BLUE, 0);
+        LOG_INFO("OFF: Ambient light RGB Common Cathode");
+#endif
+#ifdef UNPHONE
+            unphone.rgb(0, 0, 0);
+            LOG_INFO("OFF: unPhone Ambient lighting");
+#endif
+            return 0;
+        }
+        
+      protected:
+        void showNotificationMarquee()
+        {
+#ifdef HAS_NEOPIXEL
+            static uint16_t marqueeStep = 0;
+            const uint16_t hue = (marqueeStep * 2048U) & 0xFFFF;
+            const uint8_t maxBrightness = 255;
+
+            pixels.setBrightness(maxBrightness);
+#if (NEOPIXEL_COUNT > 1)
+            const uint16_t head = marqueeStep % NEOPIXEL_COUNT;
+            const uint16_t tail = (head + NEOPIXEL_COUNT - 1) % NEOPIXEL_COUNT;
+            pixels.clear();
+            pixels.setPixelColor(head, Adafruit_NeoPixel::ColorHSV(hue, 255, 255));
+            pixels.setPixelColor(tail, Adafruit_NeoPixel::ColorHSV(hue, 255, 96));
+#else
+            pixels.setPixelColor(0, Adafruit_NeoPixel::ColorHSV(hue, 255, 255));
+#endif
+            acquireNeoPixelClockLock();
+            pixels.show();
+            releaseNeoPixelClockLock();
+            marqueeStep++;
+#endif
+        }
+
+#if HAS_SOS && defined(HAS_NEOPIXEL)
+        void handleSOSBlink()
+        {
+            uint32_t now = millis();
+            uint32_t elapsed = now - _sosLastToggle;
+
+            uint16_t onTime = SOS_PATTERN[_sosPatternIndex * 2];
+            uint16_t offTime = SOS_PATTERN[_sosPatternIndex * 2 + 1];
+
+            if (_sosLedOn) {
+                if (elapsed >= onTime) {
+                    _sosLedOn = false;
+                    _sosLastToggle = now;
+                    pixels.clear();
+                    acquireNeoPixelClockLock();
+                    pixels.show();
+                    releaseNeoPixelClockLock();
+                }
+            } else {
+                if (elapsed >= offTime) {
+                    _sosPatternIndex++;
+                    if (_sosPatternIndex >= 10) {
+                        _sosPatternIndex = 0;
+                    }
+                    _sosLastToggle = now;
+                    _sosLedOn = SOS_PATTERN[_sosPatternIndex * 2] > 0;
+                    if (_sosLedOn) {
+                        pixels.setBrightness(255);
+                        pixels.fill(pixels.Color(255, 0, 0), 0, NEOPIXEL_COUNT);
+                        acquireNeoPixelClockLock();
+                        pixels.show();
+                        releaseNeoPixelClockLock();
+                    }
+                }
+            }
+        }
+
+        // SOS Morse pattern: each pair is (on_ms, off_ms)
+        // S = 3 dots, O = 3 dashes, S = 3 dots, then cycle gap
+        static constexpr uint16_t SOS_PATTERN[20] = {
+            200, 200,  // dot
+            200, 200,  // dot
+            200, 200,  // dot
+            600, 200,  // dash
+            600, 200,  // dash
+            600, 200,  // dash
+            200, 200,  // dot
+            200, 200,  // dot
+            200, 200,  // dot
+            0,    1000, // cycle gap
+        };
+#endif
+
+        void setLighting()
+        {
+            setLighting(moduleConfig.ambient_lighting.current, moduleConfig.ambient_lighting.red,
+                        moduleConfig.ambient_lighting.green, moduleConfig.ambient_lighting.blue);
+        }
+
+        void setLighting(float current, uint8_t red, uint8_t green, uint8_t blue)
+        {
+            if (_flashlightOverrideActive && !(red == 255 && green == 255 && blue == 255 && current == 255)) {
+                return;
+            }
+#if HAS_SOS
+            if (_sosOverrideActive) {
+                return;
+            }
+#endif
+#ifdef HAS_NCP5623
+            rgb.setCurrent(current);
+            rgb.setRed(red);
+            rgb.setGreen(green);
+            rgb.setBlue(blue);
+            LOG_DEBUG("Init NCP5623 Ambient light w/ current=%f, red=%d, green=%d, blue=%d", current, red, green, blue);
+#endif
+#ifdef HAS_LP5562
+            rgbw.setCurrent(current);
+            rgbw.setRed(red);
+            rgbw.setGreen(green);
+            rgbw.setBlue(blue);
+            LOG_DEBUG("Init LP5562 Ambient light w/ current=%f, red=%d, green=%d, blue=%d", current, red, green, blue);
+#endif
+#ifdef HAS_NEOPIXEL
+            const bool allOff = (current <= 0.0f) || (red == 0 && green == 0 && blue == 0);
+            if (allOff) {
+                // NeoPixel brightness "0" is not hard-off in Adafruit library internals; clear explicitly.
+                pixels.clear();
+                acquireNeoPixelClockLock();
+                pixels.show();
+                releaseNeoPixelClockLock();
+                return;
+            }
+
+            pixels.setBrightness(current);
+            pixels.fill(pixels.Color(red, green, blue), 0, NEOPIXEL_COUNT);
+
+// RadioMaster Bandit has addressable LED at the two buttons
+// this allow us to set different lighting for them in variant.h file.
+#if defined(BUTTON1_COLOR) && defined(BUTTON1_COLOR_INDEX)
+            pixels.fill(BUTTON1_COLOR, BUTTON1_COLOR_INDEX, 1);
+#endif
+#if defined(BUTTON2_COLOR) && defined(BUTTON2_COLOR_INDEX)
+            pixels.fill(BUTTON2_COLOR, BUTTON2_COLOR_INDEX, 1);
+#endif
+            acquireNeoPixelClockLock();
+            pixels.show();
+            releaseNeoPixelClockLock();
+            // LOG_DEBUG("Init NeoPixel Ambient light w/ brightness(current)=%f, red=%d, green=%d, blue=%d",
+            //        current, red, green, blue);
+#endif
+#ifdef RGBLED_CA
+            analogWrite(RGBLED_RED, 255 - red);
+            analogWrite(RGBLED_GREEN, 255 - green);
+            analogWrite(RGBLED_BLUE, 255 - blue);
+            LOG_DEBUG("Init Ambient light RGB Common Anode w/ red=%d, green=%d, blue=%d", red, green, blue);
+#elif defined(RGBLED_RED)
+        analogWrite(RGBLED_RED, red);
+        analogWrite(RGBLED_GREEN, green);
+        analogWrite(RGBLED_BLUE, blue);
+        LOG_DEBUG("Init Ambient light RGB Common Cathode w/ red=%d, green=%d, blue=%d", red, green, blue);
+#endif
+#ifdef UNPHONE
+            unphone.rgb(red, green, blue);
+            LOG_DEBUG("Init unPhone Ambient light w/ red=%d, green=%d, blue=%d", red, green, blue);
+#endif
+        }
+    };
+#endif // AMBIENTLIGHTINGTHREAD_H

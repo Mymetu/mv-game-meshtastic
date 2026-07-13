@@ -1,0 +1,26 @@
+# PlatformIO build artifacts (regenerated every build)
+.pio/
+.pioenvs/
+.piolibdeps/
+.claude/
+
+# Build debug logs
+build_*.log
+build.log
+
+# Direct g++ test (legacy diagnostic, harmless if pushed but not needed)
+test_lfs/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python (CI / scripts venvs)
+__pycache__/
+*.pyc
+.venv/
+venv/

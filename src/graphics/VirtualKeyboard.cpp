@@ -1,0 +1,942 @@
+#include "configuration.h"
+#if HAS_SCREEN
+#include "VirtualKeyboard.h"
+#include "graphics/Screen.h"
+#include "graphics/ScreenFonts.h"
+#include "graphics/SharedUIDisplay.h"
+#include "main.h"
+#if defined(TINYLORA_ADVANCED_IME)
+#include "pinyin_trie_helpers.h"
+#else
+#include <pinyin_simple_backend.h>
+#endif
+#include <Arduino.h>
+#include <vector>
+
+namespace graphics
+{
+
+VirtualKeyboard::VirtualKeyboard() : cursorRow(0), cursorCol(0), lastActivityTime(millis())
+{
+    initializeKeyboard();
+    // Set cursor to H(2, 5)
+    cursorRow = 0;
+    cursorCol = 0;
+}
+
+VirtualKeyboard::~VirtualKeyboard() {}
+
+void VirtualKeyboard::initializeKeyboard()
+{
+    // New 4-row layout with 10 characters + 1 action key per row (11 columns):
+    // 1) 1 2 3 4 5 6 7 8 9 0 BACK
+    // 2) q w e r t y u i o p ENTER
+    // 3) a s d f g h j k l ; SPACE
+    // 4) z x c v b n m . , ? ESC
+    static const char LAYOUT[KEYBOARD_ROWS][KEYBOARD_COLS] = {{'1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '\b'},
+                                                              {'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '\n'},
+                                                              {'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', ' '},
+                                                              {'z', 'x', 'c', 'v', 'b', 'n', 'm', '.', ',', '?', '\x1b'}};
+
+    // Derive layout dimensions and assert they match the configured keyboard grid
+    constexpr int LAYOUT_ROWS = (int)(sizeof(LAYOUT) / sizeof(LAYOUT[0]));
+    constexpr int LAYOUT_COLS = (int)(sizeof(LAYOUT[0]) / sizeof(LAYOUT[0][0]));
+    static_assert(LAYOUT_ROWS == KEYBOARD_ROWS, "LAYOUT rows must equal KEYBOARD_ROWS");
+    static_assert(LAYOUT_COLS == KEYBOARD_COLS, "LAYOUT cols must equal KEYBOARD_COLS");
+
+#if defined(TINYLORA_ADVANCED_IME)
+    displayList = {};
+    selectionPos = {};
+    resultsOffset = 0;
+#else
+    selectList = "";
+    selectListLayout = {};
+    selectListOffset = 0;
+#endif
+
+    // Initialize all keys to empty first
+    for (int row = 0; row < LAYOUT_ROWS; row++) {
+        for (int col = 0; col < LAYOUT_COLS; col++) {
+            keyboard[row][col] = {0, VK_CHAR, 0, 0, 0, 0};
+        }
+    }
+
+    // Fill keyboard from the 2D layout
+    for (int row = 0; row < LAYOUT_ROWS; row++) {
+        for (int col = 0; col < LAYOUT_COLS; col++) {
+            char ch = LAYOUT[row][col];
+            // No empty slots in the simplified layout
+
+            VirtualKeyType type = VK_CHAR;
+            if (ch == '\b') {
+                type = VK_BACKSPACE;
+            } else if (ch == '\n') {
+                type = VK_ENTER;
+            } else if (ch == '\x1b') { // ESC
+                type = VK_ESC;
+            } else if (ch == ' ') {
+                type = VK_SPACE;
+            }
+
+            // Make action keys wider to fit text while keeping the last column aligned
+            uint8_t width = (type == VK_BACKSPACE || type == VK_ENTER || type == VK_SPACE) ? (KEY_WIDTH * 3) : KEY_WIDTH;
+            keyboard[row][col] = {ch, type, (uint8_t)(col * KEY_WIDTH), (uint8_t)(row * KEY_HEIGHT), width, KEY_HEIGHT};
+        }
+    }
+}
+
+void VirtualKeyboard::draw(OLEDDisplay *display, int16_t offsetX, int16_t offsetY)
+{
+    // Repeat ticking is driven by NotificationRenderer once per frame
+    // Base styles
+    display->setColor(WHITE);
+    display->setFont(FONT_SMALL);
+
+    // Screen geometry
+    const int screenW = display->getWidth();
+    const int screenH = display->getHeight();
+
+    // Decide wide-screen mode: if there is comfortable width, allow taller keys and reserve fixed width for last column labels
+    // Heuristic: if screen width >= 200px (e.g., 240x135), treat as wide
+    const bool isWide = screenW >= 200;
+
+    // Determine last-column label max width
+    display->setFont(FONT_SMALL);
+    const int wENTER = display->getStringWidth("ENTER");
+    int lastColLabelW = wENTER; // ENTER is usually the widest
+    // Smaller padding on very small screens to avoid excessive whitespace
+    const int lastColPad = (screenW <= 128 ? 2 : 6);
+    const int reservedLastColW = lastColLabelW + lastColPad; // reserved width for last column keys
+
+    // Always reserve width for the rightmost text column to avoid overlap on small screens
+    int cellW = 0;
+    int leftoverW = 0;
+    {
+        const int leftCols = KEYBOARD_COLS - 1; // 10 input characters
+        int usableW = screenW - reservedLastColW;
+        if (usableW < leftCols) {
+            // Guard: ensure at least 1px per left cell if labels are extremely wide (unlikely)
+            usableW = leftCols;
+        }
+        cellW = usableW / leftCols;
+        leftoverW = usableW - cellW * leftCols; // distribute extra pixels over left columns (left to right)
+    }
+
+    // Dynamic key geometry
+    int cellH = KEY_HEIGHT;
+    if (isWide) {
+        // For wide screens (e.g., T114 240x135), prefer square keys: height equals left-column key width.
+        cellH = std::max((int)KEY_HEIGHT, cellW);
+
+        // Guarantee at least 2 lines of input are visible by reducing cell height minimally if needed.
+        // Replicate the spacing used in drawInputArea(): headerGap=1, box-to-header gap=1, gap above keyboard=1
+        display->setFont(FONT_SMALL);
+        const int headerHeight = headerText.empty() ? 0 : (FONT_HEIGHT_SMALL + 1);
+        const int headerToBoxGap = 1;
+        const int gapAboveKb = 1;
+        const int minBoxHeightForTwoLines = 2 * FONT_HEIGHT_SMALL + 2; // inner 1px top/bottom
+        int maxKeyboardHeight = screenH - (offsetY + headerHeight + headerToBoxGap + minBoxHeightForTwoLines + gapAboveKb);
+        int maxCellHAllowed = maxKeyboardHeight / KEYBOARD_ROWS;
+        if (maxCellHAllowed < (int)KEY_HEIGHT)
+            maxCellHAllowed = KEY_HEIGHT;
+        if (maxCellHAllowed > 0 && cellH > maxCellHAllowed) {
+            cellH = maxCellHAllowed;
+        }
+    }
+
+    // Keyboard placement from bottom
+    const int keyboardHeight = KEYBOARD_ROWS * cellH;
+    int keyboardStartY = screenH - keyboardHeight;
+    if (keyboardStartY < 0)
+        keyboardStartY = 0;
+
+    // Draw input area above keyboard
+    drawInputArea(display, offsetX, offsetY, keyboardStartY);
+
+    // Precompute per-column x and width with leftover distributed over left columns for even spacing
+    int colX[KEYBOARD_COLS];
+    int colW[KEYBOARD_COLS];
+    int runningX = offsetX;
+    for (int col = 0; col < KEYBOARD_COLS - 1; ++col) {
+        int wcol = cellW + (col < leftoverW ? 1 : 0);
+        colX[col] = runningX;
+        colW[col] = wcol;
+        runningX += wcol;
+    }
+    // Last column
+    colX[KEYBOARD_COLS - 1] = runningX;
+    colW[KEYBOARD_COLS - 1] = reservedLastColW;
+
+    // Draw keyboard grid
+    for (int row = 0; row < KEYBOARD_ROWS; row++) {
+        for (int col = 0; col < KEYBOARD_COLS; col++) {
+            const VirtualKey &k = keyboard[row][col];
+            if (k.character != 0 || k.type != VK_CHAR) {
+                const bool isLastCol = (col == KEYBOARD_COLS - 1);
+                int x = colX[col];
+                int w = colW[col];
+                int y = offsetY + keyboardStartY + row * cellH;
+                int h = cellH;
+                bool selected = (row == cursorRow && col == cursorCol);
+                drawKey(display, k, selected, x, y, (uint8_t)w, (uint8_t)h, isLastCol);
+            }
+        }
+    }
+}
+
+void VirtualKeyboard::drawInputArea(OLEDDisplay *display, int16_t offsetX, int16_t offsetY, int16_t keyboardStartY)
+{
+    display->setColor(WHITE);
+
+    const int screenWidth = display->getWidth();
+    const int screenHeight = display->getHeight();
+    // Use the standard small font metrics for input box sizing (restore original size)
+    const int inputLineH = FONT_HEIGHT_SMALL;
+
+    // Header uses the standard small (which may be larger on big screens)
+    display->setFont(FONT_SMALL);
+    int headerHeight = 0;
+    int chineseArea = (IMEStatus == ACTIVE) ? 12 : 0;
+    if (!headerText.empty() && IMEStatus == INACTIVE) {
+        // Draw header and reserve exact font height (plus a tighter gap) to maximize input area
+        display->drawString(offsetX + 2, offsetY, headerText.c_str());
+        // On very small screens (e.g., 128x64), push the input box as close as possible to the header
+        headerHeight = FONT_HEIGHT_SMALL; // no extra padding baked in
+    }
+
+    // Input box - from below header down to just above the keyboard
+    const int boxX = offsetX + 2;
+    // Smaller gap below header on tiny screens, slightly larger otherwise
+    const int gapBelowHeader = (screenHeight <= 64 ? 0 : 1);
+    const int boxY = offsetY + headerHeight + gapBelowHeader;
+    const int boxWidth = screenWidth - 4;
+    // Ensure the box doesn't touch the keyboard: prefer a bigger guard gap on 64px screens
+    int gapAboveKeyboard = (screenHeight <= 64 ? 3 : 1);
+    // Minimum box height to fully contain one text line with 1px padding on top and bottom
+    const int minBoxHeight = inputLineH + 2;
+    int availableH = keyboardStartY - boxY - gapAboveKeyboard; // initial available height
+    if (screenHeight <= 64 && availableH < minBoxHeight) {
+        // Try to grow the box by reducing the gap above keyboard, but keep at least 1px separation
+        int need = minBoxHeight - availableH;
+        int canReduce = gapAboveKeyboard - 1;
+        int reduce = std::min(need, canReduce);
+        if (reduce > 0) {
+            gapAboveKeyboard -= reduce;
+            availableH = keyboardStartY - boxY - gapAboveKeyboard;
+        }
+    }
+    int boxHeight;
+    if (screenHeight <= 64) {
+        // On tiny screens, enforce at least one text line + 2px padding when possible
+        if (availableH >= minBoxHeight) {
+            boxHeight = availableH; // maximize
+        } else {
+            // If still not enough space, use whatever is available but keep >=1px
+            boxHeight = std::max(1, availableH);
+        }
+    } else {
+        if (availableH < inputLineH + 2)
+            availableH = inputLineH + 2; // ensure minimum readability on larger screens
+        boxHeight = availableH;
+    }
+
+    // Draw box border
+    //display->drawRect(boxX, boxY, boxWidth, boxHeight);
+
+    display->setFont(FONT_SMALL);
+
+    // Chinese selecting area display
+
+    if (IMEStatus == ACTIVE) {
+        std::string currentPinyin = inputText.substr(processedWords, inputText.length() - processedWords);
+#if defined(TINYLORA_ADVANCED_IME)
+        int fulllen = 0;
+        std::vector<std::string> results = unified_search(currentPinyin, 60);
+        resultsfulllen = results.size() - 1;
+        displayList = {};
+        selectionPos = {};
+
+        for (int i = resultsOffset; i <= resultsfulllen; i++) {
+            if (results.empty()) {
+                break;
+            }
+            uint8_t lastpos = fulllen;
+            uint8_t width = display->getStringWidth(results[i].c_str(), results[i].length(), true);
+            fulllen += width + 6;
+            if (fulllen < display->getWidth() - 5) {
+                selectionPos.push_back(fulllen - 6);
+                displayList.push_back(results[i]);
+                display->drawString(lastpos, boxHeight - chineseArea, results[i].c_str());
+                if ((i - resultsOffset) == cursorCol) {
+                    display->drawHorizontalLine(lastpos, boxHeight, width);
+                    display->drawHorizontalLine(lastpos, boxHeight + 1, width);
+                }
+            } else {
+                break;
+            }
+        }
+#else
+        uint8_t gotChars = 0;
+        uint8_t copiedBytes = 0;
+        selectList = "";
+        selectListLayout = {};
+        char *resultptr = pinyin_simple_search(currentPinyin.c_str());
+        std::string List = (resultptr == NULL) ? "" : resultptr;
+        selectListfulllen = List.length();
+        std::string str = List.substr(selectListOffset);
+        while (selectListfulllen != 0 && gotChars < 9) {
+            uint8_t bytesToCopy;
+            if (str.length() <= copiedBytes) {
+                break;
+            }
+            bytesToCopy = getUtf8Length(str.c_str(), copiedBytes);
+            if (cursorCol == gotChars) {
+                uint8_t width = display->getStringWidth(selectList.c_str(), selectList.length(), true);
+                display->drawHorizontalLine(width, boxHeight, 12);
+                display->drawHorizontalLine(width, boxHeight + 1, 12);
+            }
+            selectList.append(str.substr(copiedBytes, bytesToCopy));
+            selectListLayout.push_back(bytesToCopy);
+            copiedBytes += bytesToCopy;
+            gotChars++;
+        }
+        selectableChars = gotChars;
+        display->drawString(0, boxHeight - chineseArea, selectList.c_str());
+#endif
+        display->drawString(display->width() - 10, boxHeight - chineseArea, ">");
+        if (cursorCol == 9) {
+            display->drawHorizontalLine(display->width() - 10, boxHeight, display->getStringWidth(">"));
+            display->drawHorizontalLine(display->width() - 10, boxHeight + 1, display->getStringWidth(">"));
+        }
+    }
+
+    // Text rendering: multi-line if space allows (>= 2 lines), else single-line with leading ellipsis
+    const int textX = boxX + 2;
+    const int maxTextWidth = boxWidth - 4;
+    const int maxLines = (boxHeight - 2) / inputLineH;
+#if defined(TINYLORA_ADVANCED_IME)
+    auto textWidth = [&](const std::string &text) { return display->getStringWidth(text.c_str(), text.length(), true); };
+    auto drawText = [&](int16_t x, int16_t y, const std::string &text) { display->drawString(x, y, text.c_str()); };
+#else
+    auto textWidth = [&](const std::string &text) { return display->getStringWidth(text.c_str()); };
+    auto drawText = [&](int16_t x, int16_t y, const std::string &text) { display->drawString(x, y, text.c_str()); };
+#endif
+
+    if (maxLines >= 2) {
+        // Inner bounds for caret clamping
+        const int innerLeft = boxX + 1;
+        const int innerRight = boxX + boxWidth - 2;
+        const int innerTop = boxY + 1;
+        const int innerBottom = boxY + boxHeight - 2;
+
+        // Wrap text greedily into lines that fit maxTextWidth
+        std::vector<std::string> lines;
+        {
+            std::string remaining = inputText;
+            while (!remaining.empty()) {
+                int bestLen = 0;
+                for (int len = 1; len <= (int)remaining.size(); ++len) {
+                    int w = textWidth(remaining.substr(0, len));
+                    if (w <= maxTextWidth)
+                        bestLen = len;
+                    else
+                        break;
+                }
+                if (bestLen == 0) {
+                    // At least show one character to make progress
+                    bestLen = 1;
+                }
+                lines.emplace_back(remaining.substr(0, bestLen));
+                remaining.erase(0, bestLen);
+            }
+        }
+
+        const bool scrolledUp = ((int)lines.size() > maxLines);
+        int caretX = textX;
+        int caretY = innerTop;
+
+        // Leave a small top gap to render '...' without replacing the first line
+        const int topInset = 2;
+        const int lineStep = std::max(1, inputLineH - 1); // slightly tighter than font height
+        int lineY = innerTop + topInset;
+
+        if (scrolledUp) {
+            // Draw three small dots centered horizontally, vertically at the midpoint of the gap
+            // between the inner top and the first line's top baseline. This avoids using a tall glyph.
+            const int firstLineTop = lineY;                                   // baseline top for the first visible line
+            const int gapMidY = innerTop + (firstLineTop - innerTop) / 2 + 1; // shift down 1px as requested
+            const int centerX = boxX + boxWidth / 2;
+            const int dotSpacing = 3; // px between dots
+            const int dotSize = 1;    // small square dot
+            display->fillRect(centerX - dotSpacing, gapMidY, dotSize, dotSize);
+            display->fillRect(centerX, gapMidY, dotSize, dotSize);
+            display->fillRect(centerX + dotSpacing, gapMidY, dotSize, dotSize);
+        }
+
+        // How many lines fit with our top inset and tighter step
+        const int linesCapacity = std::max(1, (innerBottom - lineY + 1) / lineStep);
+        const int linesToShow = std::min((int)lines.size(), linesCapacity);
+        const int startIndex = scrolledUp ? ((int)lines.size() - linesToShow) : 0;
+
+        for (int i = 0; i < linesToShow; ++i) {
+            const std::string &chunk = lines[startIndex + i];
+            drawText(textX, lineY, chunk);
+            caretX = textX + textWidth(chunk);
+            caretY = lineY;
+            lineY += lineStep;
+        }
+
+        // Draw caret at end of the last visible line
+        int caretPadY = 2;
+        if (boxHeight >= inputLineH + 4)
+            caretPadY = 3;
+        int cursorTop = caretY + caretPadY;
+        // Use lineStep so caret height matches the row spacing
+        int cursorH = lineStep - caretPadY * 2;
+        if (cursorH < 1)
+            cursorH = 1;
+        // Clamp vertical bounds to stay inside the inner rect
+        if (cursorTop < innerTop)
+            cursorTop = innerTop;
+        if (cursorTop + cursorH - 1 > innerBottom)
+            cursorH = innerBottom - cursorTop + 1;
+        if (cursorH < 1)
+            cursorH = 1;
+        // Only draw if cursor is inside inner bounds
+        if (caretX >= innerLeft && caretX <= innerRight) {
+            display->drawVerticalLine(caretX, cursorTop, cursorH);
+        }
+    } else {
+        std::string displayText = inputText;
+        int textW = textWidth(displayText);
+        std::string scrolled = displayText;
+        if (textW > maxTextWidth) {
+            // Trim from the left until it fits
+            while (textW > maxTextWidth && !scrolled.empty()) {
+                scrolled.erase(0, 1);
+                textW = textWidth(scrolled);
+            }
+            // Add leading ellipsis and ensure it still fits
+            if (scrolled != displayText) {
+                scrolled = "..." + scrolled;
+                textW = textWidth(scrolled);
+                // If adding ellipsis causes overflow, trim more after the ellipsis
+                while (textW > maxTextWidth && scrolled.size() > 3) {
+                    scrolled.erase(3, 1); // remove chars after the ellipsis
+                    textW = textWidth(scrolled);
+                }
+            }
+        } else {
+            // Keep textW in sync with what we draw
+            textW = textWidth(scrolled);
+        }
+
+        const int innerLeft = boxX + 1;
+        const int innerRight = boxX + boxWidth - 2;
+        const int innerTop = boxY + 1;
+        const int innerBottom = boxY + boxHeight - 2;
+
+        // Position text above vertical center; total up-shift by 4px for single-line
+        int innerH = innerBottom - innerTop + 1;
+        int textY = innerTop + std::max(0, (innerH - inputLineH) / 2) - 5; // was -4, now -5
+        // Allow clamping to the outer border so upward shift remains visible on very small boxes
+        if (textY < boxY)
+            textY = boxY;
+        if (!scrolled.empty()) {
+            drawText(textX, textY, scrolled);
+        }
+
+        int cursorX = textX + textW;
+        if (cursorX > innerRight)
+            cursorX = innerRight;
+
+        // Caret: height = outer box height - 4, with a 2px margin from top/bottom
+        int cursorTop = boxY + 2;
+        int cursorH = boxHeight - 4;
+        if (cursorH < 1)
+            cursorH = 1;
+        // Clamp vertical bounds to stay inside the inner rect
+        if (cursorTop < innerTop)
+            cursorTop = innerTop;
+        if (cursorTop + cursorH - 1 > innerBottom)
+            cursorH = innerBottom - cursorTop + 1;
+        if (cursorH < 1)
+            cursorH = 1;
+
+        // Only draw if cursor is inside inner bounds
+        if (cursorX >= innerLeft && cursorX <= innerRight) {
+            display->drawVerticalLine(cursorX, cursorTop, cursorH - chineseArea);
+        }
+        
+        //display->drawVerticalLine(cursorX, cursorTop, cursorH);
+    }
+}
+
+void VirtualKeyboard::drawKey(OLEDDisplay *display, const VirtualKey &key, bool selected, int16_t x, int16_t y, uint8_t width,
+                              uint8_t height, bool isLastCol)
+{
+    // Draw key content
+    display->setFont(FONT_SMALL);
+    const int fontH = FONT_HEIGHT_SMALL;
+    // Build label and metrics first
+    std::string keyText;
+    if (key.type == VK_BACKSPACE || key.type == VK_ENTER || key.type == VK_SPACE || key.type == VK_ESC) {
+        // Keep literal text labels for the action keys on the rightmost column
+        keyText = (key.type == VK_BACKSPACE) ? "BACK" : (key.type == VK_ENTER) ? "ENTER" : (key.type == VK_SPACE) ? "SPACE" : "";
+        if (key.type == VK_ESC) {
+            keyText = (IMEStatus == ACTIVE) ? "CN ESC" : "EN ESC";
+        }
+    } else {
+        char c = getCharForKey(key, false);
+        keyText = (key.character == ' ' || key.character == '_') ? "_" : std::string(1, c);
+        // Show the common "/" pairing next to "?" like on a real keyboard
+        if (key.type == VK_CHAR && key.character == '?') {
+            keyText = "?/";
+        }
+    }
+
+#if defined(TINYLORA_ADVANCED_IME)
+    int textWidth = display->getStringWidth(keyText.c_str(), keyText.length(), true);
+#else
+    int textWidth = display->getStringWidth(keyText.c_str());
+#endif
+    // Label alignment
+    // - Rightmost action column: right-align text with a small right padding (~2px) so it hugs screen edge neatly.
+    // - Other keys: center horizontally; use ceil-style rounding to avoid appearing left-biased on odd widths.
+    int textX;
+    if (isLastCol) {
+        const int rightPad = 2;
+        textX = x + width - textWidth - rightPad;
+        if (textX < x)
+            textX = x; // guard
+    } else {
+        textX = x + (width - textWidth) / 2;
+    }
+    int contentTop = y;
+    int contentH = height;
+    if (selected) {
+        display->setColor(WHITE);
+        bool isAction = (key.type == VK_BACKSPACE || key.type == VK_ENTER || key.type == VK_SPACE || key.type == VK_ESC);
+        if (isAction) {
+            const int padX = 2; // small horizontal padding around text
+            const int padY = 1; // vertical padding so highlight doesn't touch edges
+            int hlX = textX - padX;
+            int hlW = textWidth + padX * 2;
+            // Constrain highlight within the key's horizontal span
+            int keyRight = x + width;
+            if (hlX < x) {
+                hlW -= (x - hlX);
+                hlX = x;
+            }
+            int maxW = keyRight - hlX;
+            if (hlW > maxW)
+                hlW = maxW;
+            if (hlW < 1)
+                hlW = 1;
+            // Vertical: keep a small gap from top/bottom to avoid overlap with neighboring rows
+            int hlY = y + padY;
+            int hlH = height - padY * 2 + 2; // extend downward by 1px
+            if (hlH < 1)
+                hlH = 1;
+            display->fillRect(hlX, hlY, hlW, hlH);
+            contentTop = hlY;
+            contentH = hlH;
+        } else {
+            int hlY = y + 1;
+            int hlH = height + 1;
+            if (hlH < 1)
+                hlH = 1;
+            display->fillRect(x, hlY, width, hlH);
+            contentTop = hlY;
+            contentH = hlH;
+        }
+        display->setColor(BLACK);
+    } else {
+        display->setColor(WHITE);
+    }
+
+    int centeredTextY = contentTop + (contentH - fontH) / 2;
+    if (key.type == VK_CHAR) {
+        if (keyText.size() == 1) {
+            char ch = keyText[0];
+            bool tinyScreen = (display->getHeight() <= 64);
+            if (tinyScreen) {
+                if (ch == 'g' || ch == 'j' || ch == 'q' || ch == 'y' || ch == 'p' || ch == 'v' || ch == '.' || ch == ',' ||
+                    ch == ';') {
+                    centeredTextY -= 1;
+                    if (centeredTextY < 0)
+                        centeredTextY = 0;
+                }
+            }
+        }
+    }
+    display->drawString(textX, centeredTextY, keyText.c_str());
+}
+
+char VirtualKeyboard::getCharForKey(const VirtualKey &key, bool isLongPress)
+{
+    if (key.type != VK_CHAR) {
+        return key.character;
+    }
+
+    char c = key.character;
+
+    // Long-press: letters become uppercase; for "?" provide "/" like a typical keyboard
+    if (isLongPress) {
+        if (c >= 'a' && c <= 'z') {
+            c = (char)(c - 'a' + 'A');
+        } else if (c == '?') {
+            c = '/';
+        }
+    }
+
+    return c;
+}
+
+void VirtualKeyboard::moveCursorDelta(int dRow, int dCol)
+{
+    resetTimeout();
+    // wrap around rows and cols in the 4x11 grid
+    int r = (int)cursorRow + dRow;
+    int c = (int)cursorCol + dCol;
+    if (r < 0)
+        r = KEYBOARD_ROWS - 1;
+    else if (r >= KEYBOARD_ROWS)
+        r = 0;
+    if (c < 0)
+        c = KEYBOARD_COLS - 1;
+    else if (c >= KEYBOARD_COLS)
+        c = 0;
+    cursorRow = (uint8_t)r;
+    cursorCol = (uint8_t)c;
+}
+
+void VirtualKeyboard::moveCursorUp()
+{
+    moveCursorDelta(-1, 0);
+}
+void VirtualKeyboard::moveCursorDown()
+{
+    moveCursorDelta(1, 0);
+}
+void VirtualKeyboard::moveCursorLeft()
+{
+    moveCursorDelta(0, -1);
+}
+void VirtualKeyboard::moveCursorRight()
+{
+    moveCursorDelta(0, 1);
+}
+
+void VirtualKeyboard::handlePress()
+{
+    resetTimeout(); // Reset timeout on any input activity
+
+    const VirtualKey &key = keyboard[cursorRow][cursorCol];
+
+    // Don't handle press if the key is empty (but allow special keys)
+    if (key.character == 0 && key.type == VK_CHAR) {
+        return;
+    }
+
+    // For character keys, insert lowercase character
+    if (key.type == VK_CHAR) {
+        insertCharacter(getCharForKey(key, false)); // false = lowercase/normal char
+        return;
+    }
+
+    // Handle non-character keys immediately
+    switch (key.type) {
+    case VK_BACKSPACE:
+        deleteCharacter();
+        break;
+    case VK_ENTER:
+        submitText();
+        break;
+    case VK_SPACE:
+        insertCharacter(' ');
+        break;
+    case VK_ESC:
+        if (onTextEntered) {
+            std::function<void(const std::string &)> callback = onTextEntered;
+            onTextEntered = nullptr;
+            inputText = "";
+            callback("");
+        }
+        return;
+    default:
+        break;
+    }
+}
+
+void VirtualKeyboard::handleLongPress()
+{
+    resetTimeout(); // Reset timeout on any input activity
+
+    const VirtualKey &key = keyboard[cursorRow][cursorCol];
+    // directly enter what cursor selected instead of enter digits.
+    if (IMEStatus == ACTIVE && cursorCol <= 8) {
+        selectChineseChar(cursorCol);
+        return;
+    }
+
+    if (IMEStatus == ACTIVE && cursorCol == 9) {
+        showNextSelection();
+        return;
+    }
+
+    // Don't handle press if the key is empty (but allow special keys)
+    if (key.character == 0 && key.type == VK_CHAR) {
+        return;
+    }
+
+    if (key.character == '1') {
+        insertCharacter('/');
+        return;
+    }
+
+    // For character keys, insert uppercase/alternate character
+    if (key.type == VK_CHAR) {
+        insertCharacter(getCharForKey(key, true)); // true = uppercase/alternate char
+        return;
+    }
+
+    switch (key.type) {
+    case VK_BACKSPACE:
+        // One-shot: delete up to 5 characters on long press
+        for (int i = 0; i < 5; ++i) {
+            if (inputText.empty())
+                break;
+            deleteCharacter();
+        }
+        break;
+    case VK_ENTER:
+        submitText();
+        break;
+    case VK_SPACE:
+        insertCharacter(' ');
+        break;
+    case VK_ESC:
+        //if (onTextEntered) {
+        //    onTextEntered("");
+        //}
+		toggleIME();
+        break;
+    default:
+        break;
+    }
+}
+
+void VirtualKeyboard::insertCharacter(char c)
+{
+    if (IMEStatus == ACTIVE) {
+        if (c >= '1' && c <= '9'
+#if defined(TINYLORA_ADVANCED_IME)
+            && !displayList.empty()
+#else
+            && !selectList.empty()
+#endif
+        ) { // digits for chinese selection
+            selectChineseChar(cursorCol);
+        } else if (c >= 'a' && c <= 'z') { // pinyin input
+#if defined(TINYLORA_ADVANCED_IME)
+            if (resultsOffset != 0)
+                resultsOffset = 0; // reset offset when input more chars.
+#else
+            if (selectListOffset != 0)
+                selectListOffset = 0; // reset offset when input more chars.
+#endif
+            inputText += c;
+            inputTextLayout.push_back(1);
+        } else if (c == '0') {
+            showNextSelection();
+        } else if (inputText.length() == processedWords) { // not in pinyin selection mode
+            inputText += c;
+            inputTextLayout.push_back(1);
+            processedWords++; // let it go.
+        }
+    } else {
+        if (inputText.length() < 160) { // Reasonable text length limit
+            inputText += c;
+            inputTextLayout.push_back(1);
+            processedWords++; // not in ime mode so let it go.
+        }
+    }
+}
+
+void VirtualKeyboard::deleteCharacter()
+{
+    if (!inputText.empty()) {
+        uint8_t lengthToErase;
+        lengthToErase = inputTextLayout.back();
+        inputTextLayout.pop_back();
+        inputText.erase(inputText.length() - lengthToErase, inputText.length());
+        if (inputText.length() < processedWords) {
+            processedWords -= lengthToErase;
+        }
+    }
+}
+
+void VirtualKeyboard::submitText()
+{
+    LOG_INFO("Virtual keyboard: submitting text '%s'", inputText.c_str());
+
+    // Only submit if text is not empty
+    if (!inputText.empty() && onTextEntered) {
+        // Store callback and text to submit before clearing callback
+#if defined(TINYLORA_ADVANCED_IME)
+        displayList = {};
+        selectionPos = {};
+        resultsOffset = 0;
+#else
+        selectList = "";
+        selectListLayout = {};
+        selectListOffset = 0;
+#endif
+
+        std::function<void(const std::string &)> callback = onTextEntered;
+        std::string textToSubmit = inputText;
+        onTextEntered = nullptr;
+        // Don't clear inputText here - let the calling module handle cleanup
+        // inputText = "";  // Removed: keep text visible until module cleans up
+        callback(textToSubmit);
+    } else if (inputText.empty()) {
+        // For empty text, just ignore the submission - don't clear callback
+        // This keeps the virtual keyboard responsive for further input
+        LOG_INFO("Virtual keyboard: empty text submitted, ignoring - keyboard remains active");
+    } else {
+        // No callback available
+        if (screen) {
+            screen->setFrames(graphics::Screen::FOCUS_PRESERVE);
+        }
+    }
+}
+
+void VirtualKeyboard::setInputText(const std::string &text)
+{
+    inputText = text;
+}
+
+std::string VirtualKeyboard::getInputText() const
+{
+    return inputText;
+}
+
+void VirtualKeyboard::setHeader(const std::string &header)
+{
+    headerText = header;
+}
+
+void VirtualKeyboard::setCallback(std::function<void(const std::string &)> callback)
+{
+    onTextEntered = callback;
+}
+
+void VirtualKeyboard::resetTimeout()
+{
+    lastActivityTime = millis();
+}
+
+bool VirtualKeyboard::isTimedOut() const
+{
+    return (millis() - lastActivityTime) > TIMEOUT_MS;
+}
+
+void VirtualKeyboard::toggleIME()
+{
+    if (IMEStatus == ACTIVE) { // reset vars
+#if defined(TINYLORA_ADVANCED_IME)
+        displayList = {};
+        selectionPos = {};
+        resultsOffset = 0;
+#else
+        selectList = "";
+        selectListLayout = {};
+        selectListOffset = 0;
+#endif
+    } else {
+        processedWords = inputText.length(); // mark previous chars as processed
+    }
+    IMEStatus == ACTIVE ? IMEStatus = INACTIVE : IMEStatus = ACTIVE;
+}
+
+uint8_t VirtualKeyboard::getUtf8Length(const char *c, uint8_t pos)
+{
+    uint8_t byte1 = (uint8_t)c[pos];
+
+    if (byte1 < 0x80) {
+        // ASCII character
+        return 1;
+    } else if ((byte1 & 0xE0) == 0xC0) {
+        // 2-byte UTF-8
+        return 2;
+    } else if ((byte1 & 0xF0) == 0xE0) {
+        // 3-byte UTF-8 (most CJK characters)
+        return 3;
+    } else if ((byte1 & 0xF8) == 0xF0) {
+        // 4-byte UTF-8
+        return 4;
+    }
+    return 0;
+}
+
+#if !defined(TINYLORA_ADVANCED_IME)
+uint8_t VirtualKeyboard::getChineseChar(uint8_t c)
+{
+    int ret = 0;
+    for (int i = 0; i < c; i++) { // consecutively extract bytes
+        ret += selectListLayout[i];
+    }
+    return ret;
+}
+#endif
+
+void VirtualKeyboard::selectChineseChar(uint8_t chridx)
+{
+#if defined(TINYLORA_ADVANCED_IME)
+    if (chridx + 1 > displayList.size())
+        return; // make sure it won't overflow.
+#else
+    if (chridx > selectableChars)
+        return; // make sure it won't overflow.
+#endif
+    int pinyinLength = inputText.length() - processedWords;
+    inputText.erase(inputText.length() - pinyinLength, inputText.length());
+    inputTextLayout.erase(inputTextLayout.end() - pinyinLength, inputTextLayout.end());
+#if defined(TINYLORA_ADVANCED_IME)
+    std::string word = displayList[chridx];
+#else
+    std::string word = selectList.substr(getChineseChar(chridx), selectListLayout[chridx]);
+#endif
+    inputText.append(word);
+#if defined(TINYLORA_ADVANCED_IME)
+    for (int len = 0; len < word.length();) {
+        uint8_t charLength = getUtf8Length(word.c_str(), len);
+        inputTextLayout.push_back(charLength);
+        processedWords += charLength;
+        len += charLength;
+    }
+    resultsOffset = 0;
+#else
+    uint8_t charLength = getUtf8Length(word.c_str(), 0);
+    inputTextLayout.push_back(charLength);
+    processedWords += charLength;
+    selectListOffset = 0;
+#endif
+}
+
+void VirtualKeyboard::showNextSelection()
+{
+#if defined(TINYLORA_ADVANCED_IME)
+    uint8_t listlen = displayList.size();
+    uint8_t nextOffset = resultsOffset + listlen;
+    resultsOffset = nextOffset > resultsfulllen ? 0 : nextOffset;
+#else
+    uint8_t listlen = selectList.length();
+    uint8_t nextOffset = selectListOffset + listlen;
+    selectListOffset = nextOffset >= selectListfulllen ? 0 : nextOffset;
+#endif
+}
+
+} // namespace graphics
+#endif
