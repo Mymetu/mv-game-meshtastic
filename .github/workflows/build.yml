@@ -22,7 +22,7 @@ jobs:
       fail-fast: false
       matrix:
         env:
-          - tinylora_mv_game    # ESP32-S3 N16R8 (game frame)
+          - tinylora_mv_game    # ESP32-S3 8MB (game frame, sakurapi-mv hardware)
           - tinylora_mv_zhcn   # ESP32-C3
     steps:
       - uses: actions/checkout@v4
