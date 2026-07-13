@@ -22,7 +22,7 @@ jobs:
       fail-fast: false
       matrix:
         env:
-          - tinylora_mv_game    # ESP32-S3 8MB (game frame, sakurapi-mv hardware)
+          - tinylora_mv_30_33s    # ESP32-S3 8MB (game frame, sakurapi-mv hardware)
           - tinylora_mv_zhcn   # ESP32-C3
     steps:
       - uses: actions/checkout@v4
@@ -83,7 +83,7 @@ jobs:
           #
           # This step patches the framework's library.properties to include
           # esp32s2/esp32s3/esp32c3/esp32c6, so LDF picks them up automatically
-          # for our build matrix (tinylora_mv_game = S3, tinylora_mv_zhcn = C3).
+          # for our build matrix (tinylora_mv_30_33s = S3, tinylora_mv_zhcn = C3).
           # Without this, even `lib_deps = FS LittleFS SPIFFS` won't override
           # the architecture filter at link time.
           set -e
@@ -119,7 +119,7 @@ jobs:
           # debug symbols, link maps, static libs, and PIO metadata JSON.
           # Drop intermediate cruft (depfiles, framework copies, src/ symlinks,
           # CMakeFiles, .gitignore placeholders, etc.) so the zip is small.
-          # Note: GH Actions always wraps uploads in a zip â€” there is no
+          # Note: GH Actions always wraps uploads in a zip â€?there is no
           # built-in way to expose individual files. If true direct-download
           # is needed, switch to a gh-release-based workflow.
           path: |
