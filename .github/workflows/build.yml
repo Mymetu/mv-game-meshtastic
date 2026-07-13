@@ -62,18 +62,23 @@ jobs:
       - name: Build ${{ matrix.env }}
         run: pio run -e ${{ matrix.env }}
 
-      - name: Upload ${{ matrix.env }} firmware
+      - name: Upload ${{ matrix.env }} build outputs
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: firmware-${{ matrix.env }}
-          # Grab everything PIO produced for this env. Includes:
-          #   firmware-<env>-<ver>.<hash>.bin            (app partition)
-          #   firmware-<env>-<ver>.<hash>.factory.bin    (merged, ready to flash at 0x0)
-          #   firmware-<env>-<ver>.<hash>.elf            (debug symbols, ~80MB)
-          #   littlefs-<env>-<ver>.<hash>.bin           (FS image)
-          #   bootloader.bin, partitions.bin
-          # User wants ALL build files preserved, so no exclusion.
-          path: .pio/build/${{ matrix.env }}/*
+          name: ${{ matrix.env }}
+          # Ship ONLY the user-facing build outputs: prebuilt images,
+          # debug symbols, link maps, static libs, and PIO metadata JSON.
+          # Drop intermediate cruft (depfiles, framework copies, src/ symlinks,
+          # CMakeFiles, .gitignore placeholders, etc.) so the zip is small.
+          # Note: GH Actions always wraps uploads in a zip — there is no
+          # built-in way to expose individual files. If true direct-download
+          # is needed, switch to a gh-release-based workflow.
+          path: |
+            .pio/build/${{ matrix.env }}/*.bin
+            .pio/build/${{ matrix.env }}/*.elf
+            .pio/build/${{ matrix.env }}/*.map
+            .pio/build/${{ matrix.env }}/*.a
+            .pio/build/${{ matrix.env }}/*.json
           if-no-files-found: error
           retention-days: 14
