@@ -27,12 +27,12 @@ extern "C" {
 #define BUTTON_ACTIVE_LOW true
 #define BUTTON_ACTIVE_PULLUP true
 /*----------------------------------------------------------------------------
- *        Display (ST7789 135x240)
+ *        Display (ST7789 320x240)
  *----------------------------------------------------------------------------*/
 
 // #define USE_ST7789
 #define ST7789_SPI_HOST SPI3_HOST
-#define DISPLAY_240_135
+#define DISPLAY_320_240
 
 #undef OLED_CJK_SIZE
 #define OLED_CJK_SIZE 16
@@ -44,14 +44,12 @@ extern "C" {
 // Screen dimensions
 #define USE_TFTDISPLAY 1
 #define TFT_COLOR_SUPPORT 1
-#ifdef DISPLAY_240_135
-#define TFT_MEMORY_WIDTH 240
-#define TFT_WIDTH 240
-#define TFT_MEMORY_HEIGHT 240
+#ifdef DISPLAY_320_240
+#define TFT_WIDTH 320
 #define TFT_HEIGHT 240
-#define TFT_OFFSET_X -53
-#define TFT_OFFSET_Y 40
-#define TFT_OFFSET_ROTATION 2
+#define TFT_OFFSET_X 0
+#define TFT_OFFSET_Y 0
+#define TFT_OFFSET_ROTATION 0
 #else
 #define TFT_WIDTH 240
 #define TFT_HEIGHT 240
