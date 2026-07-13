@@ -45,6 +45,19 @@ jobs:
       - name: Install PlatformIO
         run: pip install --upgrade platformio
 
+      - name: Install mklittlefs (needed for FS image step on Linux)
+        run: |
+          # meshtastic fw's build process invokes `mklittlefs` directly (not
+          # the full path), so the binary must be on PATH. apt doesn't always
+          # have it, so we pull from the earlephilhower GitHub release.
+          cd /tmp
+          curl -sL -o mklittlefs.tar.gz \
+            "https://github.com/earlephilhower/mklittlefs/releases/download/4.1.0/mklittlefs-4.1.0-linux-x86_64.tar.gz"
+          tar -xzf mklittlefs.tar.gz
+          sudo mv mklittlefs /usr/local/bin/
+          rm mklittlefs.tar.gz
+          mklittlefs --version || echo "mklittlefs install check (binary present if no error above)"
+
       - name: Build ${{ matrix.env }}
         run: pio run -e ${{ matrix.env }}
 
