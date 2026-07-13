@@ -1135,8 +1135,6 @@ void UIRenderer::drawIconScreen(const char *upperMsg, OLEDDisplay *display, OLED
     display->setTextAlignment(TEXT_ALIGN_LEFT);
 #if defined(GAT562)
     const char *title = "GAT-IoT";
-#elif defined(TINYLORA_MV_GAME)
-    const char *title = "TinyLora_MV_30/33S";
 #elif defined(TINYLORA)
     const char *title = "TinyLora C3";
 #else

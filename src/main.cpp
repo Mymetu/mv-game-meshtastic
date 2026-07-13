@@ -250,8 +250,6 @@ const char *getDeviceName()
     } else {
 #if defined(GAT562)
         snprintf(name, sizeof(name), "GAT562_%02x%02x", dmac[4], dmac[5]);
-#elif defined(TINYLORA_MV_GAME)
-        snprintf(name, sizeof(name), "TinyLora_MV_%02x%02x", dmac[4], dmac[5]);
 #elif defined(TINYLORA)
         snprintf(name, sizeof(name), "TinyLora_%02x%02x", dmac[4], dmac[5]);
 #else
