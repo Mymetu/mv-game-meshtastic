@@ -51,7 +51,7 @@ extern "C" {
 #define TFT_HEIGHT 240         // panel height (after rotation swap)
 #define TFT_OFFSET_X 0
 #define TFT_OFFSET_Y 0
-#define TFT_OFFSET_ROTATION 1  // rotate to swap W/H for landscape 320x240
+#define TFT_OFFSET_ROTATION 2  // landscape orientation
 #else
 #define TFT_WIDTH 240
 #define TFT_HEIGHT 240
