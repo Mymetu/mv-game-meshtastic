@@ -45,13 +45,11 @@ extern "C" {
 #define USE_TFTDISPLAY 1
 #define TFT_COLOR_SUPPORT 1
 #ifdef DISPLAY_320_240
-#define TFT_MEMORY_WIDTH 240   // ST7789 native IC resolution
-#define TFT_MEMORY_HEIGHT 320  // ST7789 native IC resolution
-#define TFT_WIDTH 320          // panel width (after rotation swap)
-#define TFT_HEIGHT 240         // panel height (after rotation swap)
+#define TFT_WIDTH 320
+#define TFT_HEIGHT 240
 #define TFT_OFFSET_X 0
 #define TFT_OFFSET_Y 0
-#define TFT_OFFSET_ROTATION 2  // landscape orientation
+#define TFT_OFFSET_ROTATION 4  // 180° flip (mirror X + mirror Y)
 #else
 #define TFT_WIDTH 240
 #define TFT_HEIGHT 240
