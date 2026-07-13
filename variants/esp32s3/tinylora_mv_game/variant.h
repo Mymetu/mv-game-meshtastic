@@ -49,7 +49,7 @@ extern "C" {
 #define TFT_HEIGHT 240
 #define TFT_OFFSET_X 0
 #define TFT_OFFSET_Y 0
-#define TFT_OFFSET_ROTATION 4  // 180° flip (mirror X + mirror Y)
+#define TFT_OFFSET_ROTATION 2  // 180° rotation
 #else
 #define TFT_WIDTH 240
 #define TFT_HEIGHT 240
