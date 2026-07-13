@@ -59,6 +59,54 @@ jobs:
           rm mklittlefs.tar.gz
           mklittlefs --version || echo "mklittlefs installed (binary on PATH)"
 
+      - name: Pre-install PlatformIO platform (so framework is on disk before patch)
+        run: |
+          # Force PIO to install the espressif32 platform + framework now, so
+          # the next step can patch framework library.properties. PIO normally
+          # lazy-installs on the first `pio run`, but we need framework files
+          # on disk before then.
+          pio pkg install -g -p platformio/espressif32@6.13.0 || true
+
+      - name: Patch framework FS/LittleFS/SPIFFS architectures for S3/C3 builds
+        run: |
+          # Arduino-ESP32 framework's FS, LittleFS, and SPIFFS libraries ship
+          # with `architectures=esp32` in their library.properties. PlatformIO's
+          # LDF filters them out for S2/S3/C3/C6 targets, so any code that
+          # references fs::LittleFSFS (e.g. FSCommon, DebugRenderer, RangeTest,
+          # HTTP handlers) fails to link with "undefined reference to LittleFS".
+          #
+          # The framework's LittleFS.cpp also wraps its implementation in
+          # `#ifdef CONFIG_LITTLEFS_PAGE_SIZE`. ESP32-S3's sdkconfig.h does NOT
+          # define these macros on platform espressif32@6.13.0 (it did on
+          # 6.12.0), so we add them as build flags in each variant's
+          # platformio.ini.
+          #
+          # This step patches the framework's library.properties to include
+          # esp32s2/esp32s3/esp32c3/esp32c6, so LDF picks them up automatically
+          # for our build matrix (tinylora_mv_game = S3, tinylora_mv_zhcn = C3).
+          # Without this, even `lib_deps = FS LittleFS SPIFFS` won't override
+          # the architecture filter at link time.
+          set -e
+          FW_LIB_DIR="$HOME/.platformio/packages/framework-arduinoespressif32/libraries"
+          if [ ! -d "$FW_LIB_DIR" ]; then
+            echo "::error::framework-arduinoespressif32 libraries dir not found at $FW_LIB_DIR after pre-install"
+            exit 1
+          fi
+          for lib in FS LittleFS SPIFFS; do
+            prop="$FW_LIB_DIR/$lib/library.properties"
+            if [ -f "$prop" ]; then
+              if grep -q '^architectures=esp32$' "$prop"; then
+                sed -i 's/^architectures=esp32$/architectures=esp32,esp32s2,esp32s3,esp32c3,esp32c6/' "$prop"
+                echo "Patched $lib/library.properties"
+              else
+                echo "$lib/library.properties already patched or unusual architectures field; leaving as-is"
+              fi
+            else
+              echo "::error::$prop not found after pre-install"
+              exit 1
+            fi
+          done
+
       - name: Build ${{ matrix.env }}
         run: pio run -e ${{ matrix.env }}
 
