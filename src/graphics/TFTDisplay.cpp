@@ -537,8 +537,13 @@ class LGFX : public lgfx::LGFX_Device
             cfg.offset_y = 0;                             // No vertical shift needed — panel is top-aligned
             cfg.offset_rotation = 2;                      // Rotate 180° to correct upside-down layout
 #else
+#ifdef TFT_MEMORY_WIDTH
+            cfg.memory_width = TFT_MEMORY_WIDTH;    // Native IC memory width
+            cfg.memory_height = TFT_MEMORY_HEIGHT;  // Native IC memory height
+#else
             cfg.memory_width = TFT_WIDTH;              // Maximum width supported by the driver IC
             cfg.memory_height = TFT_HEIGHT;            // Maximum height supported by the driver IC
+#endif
             cfg.panel_width = TFT_WIDTH;               // actual displayable width
             cfg.panel_height = TFT_HEIGHT;             // actual displayable height
             cfg.offset_x = TFT_OFFSET_X;               // Panel offset amount in X direction
