@@ -536,13 +536,24 @@ class LGFX : public lgfx::LGFX_Device
             cfg.offset_x = 0;
             cfg.offset_y = 0;                             // No vertical shift needed — panel is top-aligned
             cfg.offset_rotation = 2;                      // Rotate 180° to correct upside-down layout
+#elif defined(DISPLAY_320_240)
+            // ST7789 with 320x240 panel: LovyanGFX setRotation(3) internally
+            // swaps panel_width↔panel_height. Pre-swap cfg values so that
+            // _width=320, _height=240 after LovyanGFX's internal swap.
+            cfg.memory_width = TFT_HEIGHT;              // Native IC cols (240) → effective width 320 after swap
+            cfg.memory_height = TFT_WIDTH;              // Native IC rows (320) → effective height 240 after swap
+            cfg.panel_width = TFT_HEIGHT;               // 240 → _width=320 after LovyanGFX swap
+            cfg.panel_height = TFT_WIDTH;               // 320 → _height=240 after LovyanGFX swap
+            cfg.offset_x = TFT_OFFSET_X;
+            cfg.offset_y = TFT_OFFSET_Y;
+            cfg.offset_rotation = TFT_OFFSET_ROTATION;
 #else
-#ifdef TFT_MEMORY_WIDTH
-            cfg.memory_width = TFT_MEMORY_WIDTH;    // Native IC memory width
-            cfg.memory_height = TFT_MEMORY_HEIGHT;  // Native IC memory height
-#else
+#ifndef TFT_MEMORY_WIDTH
             cfg.memory_width = TFT_WIDTH;              // Maximum width supported by the driver IC
             cfg.memory_height = TFT_HEIGHT;            // Maximum height supported by the driver IC
+#else
+            cfg.memory_width = TFT_MEMORY_WIDTH;       // Native IC memory width
+            cfg.memory_height = TFT_MEMORY_HEIGHT;     // Native IC memory height
 #endif
             cfg.panel_width = TFT_WIDTH;               // actual displayable width
             cfg.panel_height = TFT_HEIGHT;             // actual displayable height
