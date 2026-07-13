@@ -1112,6 +1112,8 @@ void NodeDB::installDefaultDeviceState()
 #else
 #if defined(GAT562)
     snprintf(owner.long_name, sizeof(owner.long_name), "GAT562 %04x", getNodeNum() & 0x0ffff);
+#elif defined(TINYLORA_MV_GAME)
+    snprintf(owner.long_name, sizeof(owner.long_name), "TinyLora_MV %04x", getNodeNum() & 0x0ffff);
 #elif defined(TINYLORA)
     snprintf(owner.long_name, sizeof(owner.long_name), "TinyLora %04x", getNodeNum() & 0x0ffff);
 #else
