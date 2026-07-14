@@ -1170,7 +1170,7 @@ TFTDisplay::TFTDisplay(uint8_t address, int sda, int scl, OLEDDISPLAY_GEOMETRY g
 {
     LOG_DEBUG("TFTDisplay!");
 
-#ifdef TFT_BL
+#if defined(TFT_BL) && !defined(ST7789_BL) && !defined(ST7796_BL) && !defined(ILI9488_BL) && !defined(ILI9341_BACKLIGHT_EN)
     GpioPin *p = new GpioHwPin(TFT_BL);
 
     if (!TFT_BACKLIGHT_ON) { // Need to invert the pin before hardware
@@ -1180,7 +1180,7 @@ TFTDisplay::TFTDisplay(uint8_t address, int sda, int scl, OLEDDISPLAY_GEOMETRY g
         p = virtPin;
     }
 #else
-    GpioPin *p = new GpioVirtPin(); // Just simulate a pin
+    GpioPin *p = new GpioVirtPin(); // Just simulate a pin (backlight controlled by LovyanGFX Light_PWM)
 #endif
     backlightEnable = p;
 
@@ -1376,7 +1376,7 @@ void TFTDisplay::sendCommand(uint8_t com)
         unphone.backlight(true); // using unPhone library
 #endif
 #if defined(RAK14014) || defined(HELTEC_MESH_NODE_T096)
-#elif !defined(M5STACK) && !defined(HACKADAY_COMMUNICATOR) // T-Deck gets brightness set in Screen.cpp in the handleSetOn function
+#elif !defined(M5STACK) && !defined(HACKADAY_COMMUNICATOR) && !defined(ST7789_CS) && !defined(ST7796_CS) && !defined(ILI9488_CS) && !defined(ILI9341_CS) // ST7789/ST7796/ILI9488/ILI9341 get brightness set in Screen.cpp handleSetOn
         tft->setBrightness(172);
 #endif
         break;
