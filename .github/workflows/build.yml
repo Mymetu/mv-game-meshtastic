@@ -119,7 +119,7 @@ jobs:
           # debug symbols, link maps, static libs, and PIO metadata JSON.
           # Drop intermediate cruft (depfiles, framework copies, src/ symlinks,
           # CMakeFiles, .gitignore placeholders, etc.) so the zip is small.
-          # Note: GH Actions always wraps uploads in a zip â€?there is no
+          # Note: GH Actions always wraps uploads in a zip ï¿½?there is no
           # built-in way to expose individual files. If true direct-download
           # is needed, switch to a gh-release-based workflow.
           path: |

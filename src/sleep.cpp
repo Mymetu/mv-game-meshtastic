@@ -527,7 +527,7 @@ void enableModemSleep()
     static esp_pm_config_esp32_t esp32_config; // filled with zeros because bss
 #endif
 #if CONFIG_IDF_TARGET_ESP32S3
-    esp32_config.max_freq_mhz = 80; // lowered from 240 to save power (S3 still performs fine at 80MHz)
+    esp32_config.max_freq_mhz = CONFIG_ESP32S3_DEFAULT_CPU_FREQ_MHZ;
 #elif CONFIG_IDF_TARGET_ESP32S2
     esp32_config.max_freq_mhz = CONFIG_ESP32S2_DEFAULT_CPU_FREQ_MHZ;
 #elif CONFIG_IDF_TARGET_ESP32C6
