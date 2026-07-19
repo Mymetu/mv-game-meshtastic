@@ -72,8 +72,10 @@ void getMacAddr(uint8_t *dmac)
             p.getBytes("nodeMac", storedMac, 6);
             LOG_DEBUG("Loaded persistent MAC from Preferences");
         } else {
-            uint64_t randMac = esp_random() | (1ULL << 41); // bit 41 = locally administered
-            randMac &= ~(1ULL << 40);                        // bit 40 = unicast
+            uint64_t randMac = ((uint64_t)esp_random() << 32) | esp_random();
+            randMac &= 0x0000FFFFFFFFFFFFULL;   // keep only lower 48 bits
+            randMac |=  (1ULL << 41);           // bit 41 = locally administered
+            randMac &= ~(1ULL << 40);           // bit 40 = unicast
             memcpy(storedMac, &randMac, 6);
             p.putBytes("nodeMac", storedMac, 6);
             LOG_DEBUG("Generated random persistent MAC: %02x:%02x:%02x:%02x:%02x:%02x",
