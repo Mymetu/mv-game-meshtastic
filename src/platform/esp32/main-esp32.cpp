@@ -59,7 +59,31 @@ void updateBatteryLevel(uint8_t level) {}
 
 void getMacAddr(uint8_t *dmac)
 {
-#if defined(CONFIG_IDF_TARGET_ESP32C6) && defined(CONFIG_SOC_IEEE802154_SUPPORTED)
+#ifdef PERSISTENT_RANDOM_MAC
+    // Generate random MAC on first boot, store in Preferences for persistence across reboots.
+    // When flash is erased (factory reset), a new random MAC will be generated.
+    static bool macInitialized = false;
+    static uint8_t storedMac[6];
+    if (!macInitialized) {
+        Preferences p;
+        p.begin("meshtastic", false);
+        size_t len = p.getBytesLength("nodeMac");
+        if (len == 6) {
+            p.getBytes("nodeMac", storedMac, 6);
+            LOG_DEBUG("Loaded persistent MAC from Preferences");
+        } else {
+            uint64_t randMac = esp_random() | (1ULL << 41); // bit 41 = locally administered
+            randMac &= ~(1ULL << 40);                        // bit 40 = unicast
+            memcpy(storedMac, &randMac, 6);
+            p.putBytes("nodeMac", storedMac, 6);
+            LOG_DEBUG("Generated random persistent MAC: %02x:%02x:%02x:%02x:%02x:%02x",
+                      storedMac[0], storedMac[1], storedMac[2], storedMac[3], storedMac[4], storedMac[5]);
+        }
+        p.end();
+        macInitialized = true;
+    }
+    memcpy(dmac, storedMac, 6);
+#elif defined(CONFIG_IDF_TARGET_ESP32C6) && defined(CONFIG_SOC_IEEE802154_SUPPORTED)
     auto res = esp_base_mac_addr_get(dmac);
     assert(res == ESP_OK);
 #else
