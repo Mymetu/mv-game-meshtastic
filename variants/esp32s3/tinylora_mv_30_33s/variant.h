@@ -32,7 +32,7 @@ extern "C" {
 
 // #define USE_ST7789
 #define ST7789_SPI_HOST SPI3_HOST
-#define DISPLAY_320_240
+// #define DISPLAY_320_240
 
 #undef OLED_CJK_SIZE
 #define OLED_CJK_SIZE 16
