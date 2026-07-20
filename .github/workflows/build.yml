@@ -23,6 +23,7 @@ jobs:
       matrix:
         env:
           - tinylora_mv_30_33s    # ESP32-S3 8MB (game frame, sakurapi-mv hardware)
+          - tinylora_mv_30_33s_lowpower # ESP32-S3 8MB, no PSRAM, 20-240 MHz DFS test
           # - tinylora_mv_zhcn      # ESP32-C3 (Chinese UI, game frame)
           # - tinylora_mv           # ESP32-C3 (default)
           # - tinylora_v2_22s       # ESP32-C3
