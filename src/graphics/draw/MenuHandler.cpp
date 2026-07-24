@@ -3145,6 +3145,10 @@ void menuHandler::gamePauseBanner()
 // ****************************
 #ifdef ENABLE_TEAM_MODE
 #include "modules/TeamModeModule.h"
+using ::teamModeModule;
+using ::TeamModeModule;
+using ::TeamState;
+using ::DiscoveredTeam;
 
 void menuHandler::teamModeMenu()
 {

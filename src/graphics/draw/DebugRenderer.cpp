@@ -825,6 +825,9 @@ void drawGameFrame(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, i
 // ****************************
 #ifdef ENABLE_TEAM_MODE
 #include "modules/TeamModeModule.h"
+using ::teamModeModule;
+using ::TeamModeModule;
+using ::TeamState;
 
 void drawTeamModeScreen(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, int16_t y)
 {
