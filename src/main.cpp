@@ -135,6 +135,9 @@ AccelerometerThread *accelerometerThread = nullptr;
 #if HAS_SCREEN
 // gamesModule is owned by src/modules/Games/GamesModule.cpp (avoid multiple definition)
 #include "modules/Games/GamesModule.h"
+#ifdef ENABLE_TEAM_MODE
+#include "modules/TeamModeModule.h"
+#endif
 #endif
 
 #ifdef HAS_I2S
@@ -766,6 +769,11 @@ void setup()
     if (!gamesModule) {
         gamesModule = new GamesModule();
     }
+#ifdef ENABLE_TEAM_MODE
+    if (!teamModeModule) {
+        teamModeModule = new TeamModeModule();
+    }
+#endif
 #endif
 
 #if defined(HAS_NEOPIXEL) || defined(UNPHONE) || defined(RGBLED_RED)

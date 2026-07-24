@@ -8,6 +8,9 @@
 
 #include "configuration.h"
 #include "main.h"
+#ifdef ENABLE_TEAM_MODE
+#include "modules/TeamModeModule.h"
+#endif
 #include "mesh-pb-constants.h"
 #include "meshUtils.h"
 #include "modules/RoutingModule.h"
@@ -773,6 +776,13 @@ void Router::handleReceived(meshtastic_MeshPacket *p, RxSource src)
     // If this could be a spoofed packet, don't let the modules see it.
     if (!skipHandle) {
         MeshModule::callModules(*p, src);
+
+#ifdef ENABLE_TEAM_MODE
+        // Forward team mode packets
+        if (teamModeModule && p->decoded.portnum == static_cast<meshtastic_PortNum>(258)) {
+            teamModeModule->handleTeamPacket(p);
+        }
+#endif
 
 #if !MESHTASTIC_EXCLUDE_MQTT
         if (p_encrypted == nullptr) {

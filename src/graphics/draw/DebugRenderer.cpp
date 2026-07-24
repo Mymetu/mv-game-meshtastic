@@ -820,6 +820,83 @@ void drawGameFrame(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, i
 }
 #endif // ENABLE_GAMES_FRAME
 
+// ****************************
+// *    Team Mode Screen      *
+// ****************************
+#ifdef ENABLE_TEAM_MODE
+#include "modules/TeamModeModule.h"
+
+void drawTeamModeScreen(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, int16_t y)
+{
+    display->clear();
+    display->setTextAlignment(TEXT_ALIGN_LEFT);
+    display->setFont(FONT_SMALL);
+
+    if (!teamModeModule) {
+        const char *noModStr = UI_STR("Team Mode inited...", "组队模式初始化中...");
+        graphics::drawCommonHeader(display, x, y, UI_STR("Team Mode", "组队模式"));
+        display->drawString(x + 4, getTextPositions(display)[1], noModStr);
+        return;
+    }
+
+    const char *titleStr = UI_STR("Team Mode", "组队模式");
+    graphics::drawCommonHeader(display, x, y, titleStr);
+
+    int line = 1;
+    int textX = x + 4;
+
+    TeamState currentState = teamModeModule->getState();
+    char buf[64];
+
+    switch (currentState) {
+    case TEAM_UNJOINED:
+        display->drawString(textX, getTextPositions(display)[line++],
+                            UI_STR("Status: Not Joined", "组队状态：未加入"));
+        break;
+
+    case TEAM_LEADER:
+        display->drawString(textX, getTextPositions(display)[line++],
+                            UI_STR("Status: Leader", "组队状态：队长"));
+        snprintf(buf, sizeof(buf), "Team ID: 0x%08X", teamModeModule->getTeamId());
+        display->drawString(textX, getTextPositions(display)[line++], buf);
+        break;
+
+    case TEAM_MEMBER:
+        if (teamModeModule->isDisconnected()) {
+            display->setTextAlignment(TEXT_ALIGN_CENTER);
+            display->drawString(display->getWidth() / 2 + x, getTextPositions(display)[line++],
+                                UI_STR("LOST CONTACT!", "已掉队！"));
+            display->setTextAlignment(TEXT_ALIGN_LEFT);
+            snprintf(buf, sizeof(buf), "Team ID: 0x%08X", teamModeModule->getTeamId());
+            display->drawString(textX, getTextPositions(display)[line++], buf);
+            uint32_t age = teamModeModule->getLastBeaconAge();
+            snprintf(buf, sizeof(buf), "Last seen: %us ago", age / 1000);
+            display->drawString(textX, getTextPositions(display)[line++], buf);
+        } else {
+            display->drawString(textX, getTextPositions(display)[line++],
+                                UI_STR("Status: Member", "组队状态：队员"));
+            snprintf(buf, sizeof(buf), "Team ID: 0x%08X", teamModeModule->getTeamId());
+            display->drawString(textX, getTextPositions(display)[line++], buf);
+            display->drawString(textX, getTextPositions(display)[line++],
+                                UI_STR("Comm: OK", "通讯正常"));
+        }
+        break;
+    }
+
+    // Footer hint
+    display->setTextAlignment(TEXT_ALIGN_CENTER);
+    display->drawString(display->getWidth() / 2 + x, display->getHeight() - FONT_HEIGHT_SMALL,
+                        UI_STR("SELECT for menu", "按确定选项"));
+    display->setTextAlignment(TEXT_ALIGN_LEFT);
+}
+
+void drawTeamModeFrame(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, int16_t y)
+{
+    drawTeamModeScreen(display, state, x, y);
+}
+#endif // ENABLE_TEAM_MODE
+
+
 } // namespace DebugRenderer
 } // namespace graphics
 #endif

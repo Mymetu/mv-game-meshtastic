@@ -61,7 +61,11 @@ class menuHandler
         GameSnake,
         GameOptionsMenu,
         GameOverBanner,
-        GamePauseBanner
+        GamePauseBanner,
+        TeamModeMenu,
+        TeamModeScan,
+        TeamModeIntervalMenu,
+        TeamModeSilenceBanner
     };
     static screenMenus menuQueue;
     static uint32_t pickedNodeNum; // node selected by NodePicker for ManageNodeMenu
@@ -123,6 +127,10 @@ class menuHandler
     static void gameOptionsMenu();
     static void gameOverBanner();
     static void gamePauseBanner();
+    static void teamModeMenu();
+    static void teamModeScanMenu();
+    static void teamModeIntervalMenu();
+    static void teamModeSilenceBanner();
 
   private:
     static void saveUIConfig();

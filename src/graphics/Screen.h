@@ -703,6 +703,7 @@ class Screen : public concurrency::OSThread
             uint8_t lastFavorite = 255;
             uint8_t lora = 255;
             uint8_t game = 255;
+            uint8_t teamMode = 255;
         } positions;
 
         uint8_t frameCount = 0;
@@ -716,6 +717,7 @@ class Screen : public concurrency::OSThread
         bool home = false;
         bool clock = false;
         bool game = false;
+        bool teamMode = false;
 #ifndef USE_EINK
         bool nodelist_nodes = false;
         bool nodelist_location = false;

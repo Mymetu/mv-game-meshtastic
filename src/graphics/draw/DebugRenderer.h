@@ -39,6 +39,12 @@ void drawGameScreen(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, 
 // Game frame dispatcher (idle = list, active = live game)
 void drawGameFrame(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, int16_t y);
 #endif
+#ifdef ENABLE_TEAM_MODE
+// Team mode frame dispatcher
+void drawTeamModeFrame(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, int16_t y);
+// Team mode detailed screen
+void drawTeamModeScreen(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, int16_t y);
+#endif
 // Chirpy screen display
 void drawChirpy(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, int16_t y);
 } // namespace DebugRenderer

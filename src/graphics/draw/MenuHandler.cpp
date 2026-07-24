@@ -2928,6 +2928,20 @@ void menuHandler::handleMenuSwitch(OLEDDisplay *display)
         gamePauseBanner();
         break;
 #endif
+#ifdef ENABLE_TEAM_MODE
+    case TeamModeMenu:
+        teamModeMenu();
+        break;
+    case TeamModeScan:
+        teamModeScanMenu();
+        break;
+    case TeamModeIntervalMenu:
+        teamModeIntervalMenu();
+        break;
+    case TeamModeSilenceBanner:
+        teamModeSilenceBanner();
+        break;
+#endif
     case WifiToggleMenu:
         wifiToggleMenu();
         break;
@@ -3125,6 +3139,191 @@ void menuHandler::gamePauseBanner()
     screen->showOverlayBanner(bannerOptions);
 }
 #endif // ENABLE_GAMES_FRAME
+
+// ****************************
+// *    Team Mode Menus       *
+// ****************************
+#ifdef ENABLE_TEAM_MODE
+#include "modules/TeamModeModule.h"
+
+void menuHandler::teamModeMenu()
+{
+    if (!teamModeModule) return;
+
+    enum optionsNumbers { Back, CreateTeam, ScanTeams, LeaveTeam, Interval, Silence, enumEnd };
+    static const char *optionsArray[enumEnd] = {};
+    static int optionsEnumArray[enumEnd];
+    int options = 0;
+
+    optionsArray[options] = UI_STR("Back", "返回");
+    optionsEnumArray[options++] = Back;
+
+    TeamState currentState = teamModeModule->getState();
+
+    if (currentState == TEAM_UNJOINED) {
+        optionsArray[options] = UI_STR("Create Team", "创建队伍");
+        optionsEnumArray[options++] = CreateTeam;
+
+        optionsArray[options] = UI_STR("Scan Teams", "扫描队伍");
+        optionsEnumArray[options++] = ScanTeams;
+    } else if (currentState == TEAM_LEADER) {
+        // Show broadcast interval
+        optionsArray[options] = UI_STR("Interval", "广播间隔");
+        optionsEnumArray[options++] = Interval;
+
+        optionsArray[options] = UI_STR("Disband Team", "解散队伍");
+        optionsEnumArray[options++] = LeaveTeam;
+    } else if (currentState == TEAM_MEMBER) {
+        if (teamModeModule->isDisconnected()) {
+            if (!teamModeModule->isAlertSilenced()) {
+                optionsArray[options] = UI_STR("Silence Alert", "静音提醒");
+                optionsEnumArray[options++] = Silence;
+            }
+        }
+        optionsArray[options] = UI_STR("Leave Team", "退出队伍");
+        optionsEnumArray[options++] = LeaveTeam;
+    }
+
+    BannerOverlayOptions bannerOptions;
+    bannerOptions.message = UI_STR("Team Mode", "组队模式");
+    bannerOptions.optionsArrayPtr = optionsArray;
+    bannerOptions.optionsCount = options;
+    bannerOptions.optionsEnumPtr = optionsEnumArray;
+    bannerOptions.bannerCallback = [](int selected) -> void {
+        if (!teamModeModule) return;
+
+        if (selected == CreateTeam) {
+            teamModeModule->createTeam();
+            menuQueue = MenuNone;
+            screen->runNow();
+        } else if (selected == ScanTeams) {
+            teamModeModule->clearDiscoveredTeams();
+            // Scanner is always running (UNJOINED) — go to scan screen
+            menuHandler::menuQueue = menuHandler::TeamModeScan;
+            screen->runNow();
+        } else if (selected == LeaveTeam) {
+            teamModeModule->leaveTeam();
+            menuQueue = MenuNone;
+            screen->runNow();
+        } else if (selected == Interval) {
+            menuHandler::menuQueue = menuHandler::TeamModeIntervalMenu;
+            screen->runNow();
+        } else if (selected == Silence) {
+            teamModeModule->silenceAlert();
+            menuQueue = MenuNone;
+            screen->runNow();
+        } else {
+            menuQueue = MenuNone;
+        }
+    };
+    screen->showOverlayBanner(bannerOptions);
+}
+
+void menuHandler::teamModeScanMenu()
+{
+    if (!teamModeModule) return;
+
+    auto &list = teamModeModule->getDiscoveredTeams();
+
+    if (list.empty()) {
+        // Show scanning banner, retry
+        BannerOverlayOptions bannerOptions;
+        bannerOptions.message = UI_STR("Scanning...\nNo teams found.\nRetry?", "扫描中...\n未发现队伍。\n重试？");
+        static const char *opts[] = {UI_STR("Retry", "重试"), UI_STR("Back", "返回")};
+        static int optsEnum[] = {0, 1};
+        bannerOptions.optionsArrayPtr = opts;
+        bannerOptions.optionsCount = 2;
+        bannerOptions.optionsEnumPtr = optsEnum;
+        bannerOptions.bannerCallback = [](int selected) -> void {
+            if (selected == 0) {
+                // Wait a moment then re-open scan
+                menuHandler::menuQueue = menuHandler::TeamModeScan;
+                screen->runNow();
+            } else {
+                menuQueue = MenuNone;
+            }
+        };
+        screen->showOverlayBanner(bannerOptions);
+        return;
+    }
+
+    // Build dynamic list
+    int count = list.size();
+    int maxCount = count > 8 ? 8 : count; // max 8 entries
+    const char *optionsArray[10] = {};
+    int optionsEnumArray[10];
+    int opts = 0;
+
+    optionsArray[opts] = UI_STR("Back", "返回");
+    optionsEnumArray[opts++] = -1;
+
+    char label[32];
+    for (int i = 0; i < maxCount; i++) {
+        snprintf(label, sizeof(label), "0x%08X (n%u)", list[i].teamId, list[i].leaderNodeNum);
+        // Use strdup in a simple way — copy to a static buffer
+        static char labels[8][32];
+        strncpy(labels[i], label, 31);
+        labels[i][31] = 0;
+        optionsArray[opts] = labels[i];
+        optionsEnumArray[opts++] = i;
+    }
+
+    BannerOverlayOptions bannerOptions;
+    bannerOptions.message = UI_STR("Found Teams", "发现的队伍");
+    bannerOptions.optionsArrayPtr = optionsArray;
+    bannerOptions.optionsCount = opts;
+    bannerOptions.optionsEnumPtr = optionsEnumArray;
+    bannerOptions.bannerCallback = [&list](int selected) -> void {
+        if (selected < 0 || selected >= (int)list.size()) {
+            menuQueue = MenuNone;
+            return;
+        }
+        teamModeModule->joinTeam(list[selected].teamId, list[selected].leaderNodeNum);
+        menuQueue = MenuNone;
+        screen->runNow();
+    };
+    screen->showOverlayBanner(bannerOptions);
+}
+
+void menuHandler::teamModeIntervalMenu()
+{
+    if (!teamModeModule) return;
+
+    enum { Back, Sec10, Sec15, Sec30, Sec45, enumEnd };
+    static const char *optionsArray[] = {
+        UI_STR("Back", "返回"),
+        UI_STR("10 seconds", "10 秒"),
+        UI_STR("15 seconds", "15 秒"),
+        UI_STR("30 seconds", "30 秒"),
+        UI_STR("45 seconds", "45 秒")
+    };
+    static int optionsEnumArray[] = {Back, Sec10, Sec15, Sec30, Sec45};
+    static uint32_t intervals[] = {0, 10000, 15000, 30000, 45000};
+
+    BannerOverlayOptions bannerOptions;
+    bannerOptions.message = UI_STR("Broadcast Interval", "广播间隔");
+    bannerOptions.optionsArrayPtr = optionsArray;
+    bannerOptions.optionsCount = enumEnd;
+    bannerOptions.optionsEnumPtr = optionsEnumArray;
+    bannerOptions.InitialSelected = (teamModeModule->getBroadcastIntervalMs() == 10000) ? 1 :
+                                    (teamModeModule->getBroadcastIntervalMs() == 30000) ? 3 :
+                                    (teamModeModule->getBroadcastIntervalMs() == 45000) ? 4 : 2;
+    bannerOptions.bannerCallback = [](int selected) -> void {
+        if (selected > 0 && selected <= 4) {
+            teamModeModule->setBroadcastInterval(intervals[selected]);
+        }
+        menuQueue = MenuNone;
+    };
+    screen->showOverlayBanner(bannerOptions);
+}
+
+void menuHandler::teamModeSilenceBanner()
+{
+    // This is handled within teamModeMenu directly
+    menuQueue = MenuNone;
+}
+#endif // ENABLE_TEAM_MODE
+
 
 void menuHandler::gameOptionsMenu()
 {

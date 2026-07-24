@@ -1176,6 +1176,13 @@ void Screen::setFrames(FrameFocus focus)
         indicatorIcons.push_back(icon_module);
     }
 #endif
+#ifdef ENABLE_TEAM_MODE
+    if (!hiddenFrames.teamMode) {
+        fsi.positions.teamMode = numframes;
+        normalFrames[numframes++] = graphics::DebugRenderer::drawTeamModeFrame;
+        indicatorIcons.push_back(icon_module);
+    }
+#endif
 #if !defined(DISPLAY_CLOCK_FRAME)
     if (!hiddenFrames.clock) {
         fsi.positions.clock = numframes;
@@ -1879,6 +1886,10 @@ int Screen::handleInputEvent(const InputEvent *event)
                     menuHandler::systemBaseMenu();
                 } else if (this->ui->getUiState()->currentFrame == framesetInfo.positions.game) {
                     menuHandler::gameMenu();
+#ifdef ENABLE_TEAM_MODE
+                } else if (this->ui->getUiState()->currentFrame == framesetInfo.positions.teamMode) {
+                    menuHandler::teamModeMenu();
+#endif
 #if HAS_GPS
                 } else if (this->ui->getUiState()->currentFrame == framesetInfo.positions.gps && gps) {
                     menuHandler::positionBaseMenu();
