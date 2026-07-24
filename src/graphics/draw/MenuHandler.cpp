@@ -30,6 +30,10 @@
 #include <functional>
 #include <utility>
 
+#ifdef ENABLE_TEAM_MODE
+#include "modules/TeamModeModule.h"
+#endif
+
 extern uint16_t TFT_MESH;
 
 namespace graphics
@@ -3144,11 +3148,6 @@ void menuHandler::gamePauseBanner()
 // *    Team Mode Menus       *
 // ****************************
 #ifdef ENABLE_TEAM_MODE
-#include "modules/TeamModeModule.h"
-using ::teamModeModule;
-using ::TeamModeModule;
-using ::TeamState;
-using ::DiscoveredTeam;
 
 void menuHandler::teamModeMenu()
 {

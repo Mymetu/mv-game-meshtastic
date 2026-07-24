@@ -31,6 +31,9 @@
 #ifdef ARCH_ESP32
 #include "modules/StoreForwardModule.h"
 #endif
+#ifdef ENABLE_TEAM_MODE
+#include "modules/TeamModeModule.h"
+#endif
 #include <DisplayFormatters.h>
 #include <RadioLibInterface.h>
 #include <target_specific.h>
@@ -824,10 +827,6 @@ void drawGameFrame(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, i
 // *    Team Mode Screen      *
 // ****************************
 #ifdef ENABLE_TEAM_MODE
-#include "modules/TeamModeModule.h"
-using ::teamModeModule;
-using ::TeamModeModule;
-using ::TeamState;
 
 void drawTeamModeScreen(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, int16_t y)
 {
