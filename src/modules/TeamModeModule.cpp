@@ -6,6 +6,17 @@
 #include "mesh/RadioLibInterface.h"
 #include <esp_random.h>
 
+// Buzzer: ToneDuration / playTones are defined in buzz.cpp but not exposed in buzz.h,
+// so we forward-declare them here together with the NOTE_* constants.
+struct ToneDuration {
+    int frequency_khz;
+    int duration_ms;
+};
+extern void playTones(const ToneDuration *tone_durations, int size);
+
+#define NOTE_SILENT 1
+#define NOTE_B3     247
+
 // Private PortNum (258 = unused in 256-511 range, confirmed safe)
 #define TEAM_MODE_PORTNUM static_cast<meshtastic_PortNum>(258)
 
@@ -93,7 +104,7 @@ void TeamModeModule::silenceAlert()
 
 void TeamModeModule::broadcastBeacon()
 {
-    meshtastic_MeshPacket *p = packetPool.allocCopy();
+    meshtastic_MeshPacket *p = packetPool.allocZeroed();
     p->to = NODENUM_BROADCAST;
     p->hop_limit = 0; // One-hop only, no forwarding
     p->decoded.portnum = TEAM_MODE_PORTNUM;
@@ -113,7 +124,7 @@ void TeamModeModule::broadcastBeacon()
 
 void TeamModeModule::sendJoinRequest(uint32_t tId, uint32_t leaderNode)
 {
-    meshtastic_MeshPacket *p = packetPool.allocCopy();
+    meshtastic_MeshPacket *p = packetPool.allocZeroed();
     p->to = leaderNode;
     p->decoded.portnum = TEAM_MODE_PORTNUM;
     p->decoded.payload.size = 9;
@@ -189,7 +200,7 @@ void TeamModeModule::playDisconnectedTone()
     // Two short beeps: B3 beep, pause, B3 beep
     ToneDuration melody[] = {
         {NOTE_B3, 80},       // beep 1
-        {1, 100},            // silent pause
+        {NOTE_SILENT, 100},   // silent pause
         {NOTE_B3, 80},       // beep 2
     };
     playTones(melody, sizeof(melody) / sizeof(ToneDuration));
