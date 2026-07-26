@@ -1,15 +1,20 @@
 #include "TeamModeModule.h"
-#include "buzz/buzz.h"
 #include "configuration.h"
 #include "mesh/MeshService.h"
 #include "mesh/MeshTypes.h"
 #include "mesh/RadioLibInterface.h"
+#include "mesh/RadioInterface.h"
 #include <esp_random.h>
 
-// Buzzer: ToneDuration / playTones are defined in buzz.cpp but not exposed in buzz.h,
-// so we forward-declare them here together with the NOTE_* constants.
+// Global radio interface for direct RSSI read
+extern RadioInterface *rIf;
+
+// Private PortNum (258 = unused in 256-511 range, confirmed safe)
+#define TEAM_MODE_PORTNUM static_cast<meshtastic_PortNum>(258)
+
+// Buzzer: ToneDuration / playTones are internal to buzz.cpp, forward-declare here
 struct ToneDuration {
-    int frequency_khz;
+    int frequency_khz; // actually Hz, despite the field name
     int duration_ms;
 };
 extern void playTones(const ToneDuration *tone_durations, int size);
@@ -17,13 +22,11 @@ extern void playTones(const ToneDuration *tone_durations, int size);
 #define NOTE_SILENT 1
 #define NOTE_B3     247
 
-// Private PortNum (258 = unused in 256-511 range, confirmed safe)
-#define TEAM_MODE_PORTNUM static_cast<meshtastic_PortNum>(258)
-
 // Time constants
 #define BEACON_CHECK_INTERVAL_MS 5000    // Check every 5s
 #define MEMBER_TIMEOUT_MS 120000         // 2 minutes = lost
 #define DISCOVERED_TEAM_STALE_MS 60000   // 60s = stale entry removed
+#define SCAN_DURATION_MS 60000           // Scan lasts 60 seconds
 
 TeamModeModule *teamModeModule = nullptr;
 
@@ -37,6 +40,10 @@ bool TeamModeModule::disconnected = false;
 bool TeamModeModule::alertSilenced = false;
 uint32_t TeamModeModule::broadcastIntervalMs = 15000;
 std::vector<DiscoveredTeam> TeamModeModule::discoveredTeams;
+bool TeamModeModule::scanning = false;
+uint32_t TeamModeModule::scanStartTimeMs = 0;
+float TeamModeModule::lastBeaconSNR = 0.0f;
+int32_t TeamModeModule::lastBeaconRSSI = 0;
 
 TeamModeModule::TeamModeModule()
     : concurrency::OSThread("TeamMode")
@@ -50,6 +57,24 @@ uint32_t TeamModeModule::getLastBeaconAge() const
     if (lastBeaconTimeMs == 0)
         return UINT32_MAX;
     return millis() - lastBeaconTimeMs;
+}
+
+void TeamModeModule::startScan()
+{
+    scanning = true;
+    scanStartTimeMs = millis();
+    discoveredTeams.clear();
+    LOG_INFO("TeamMode: scan started, duration %d seconds", SCAN_DURATION_MS / 1000);
+}
+
+uint32_t TeamModeModule::getScanRemainingMs() const
+{
+    if (!scanning)
+        return 0;
+    uint32_t elapsed = millis() - scanStartTimeMs;
+    if (elapsed >= SCAN_DURATION_MS)
+        return 0;
+    return SCAN_DURATION_MS - elapsed;
 }
 
 void TeamModeModule::createTeam()
@@ -105,6 +130,8 @@ void TeamModeModule::silenceAlert()
 void TeamModeModule::broadcastBeacon()
 {
     meshtastic_MeshPacket *p = packetPool.allocZeroed();
+    p->which_payload_variant = meshtastic_MeshPacket_decoded_tag;
+    p->from = nodeDB->getNodeNum();
     p->to = NODENUM_BROADCAST;
     p->hop_limit = 0; // One-hop only, no forwarding
     p->decoded.portnum = TEAM_MODE_PORTNUM;
@@ -125,6 +152,8 @@ void TeamModeModule::broadcastBeacon()
 void TeamModeModule::sendJoinRequest(uint32_t tId, uint32_t leaderNode)
 {
     meshtastic_MeshPacket *p = packetPool.allocZeroed();
+    p->which_payload_variant = meshtastic_MeshPacket_decoded_tag;
+    p->from = nodeDB->getNodeNum();
     p->to = leaderNode;
     p->decoded.portnum = TEAM_MODE_PORTNUM;
     p->decoded.payload.size = 9;
@@ -178,6 +207,10 @@ void TeamModeModule::handleTeamPacket(const meshtastic_MeshPacket *p)
         // If we're a member of this team, reset lastSeen
         if (state == TEAM_MEMBER && rxTeamId == teamId) {
             lastBeaconTimeMs = millis();
+            lastBeaconSNR = p->rx_snr;
+            // Read RSSI directly from SX1262 radio (p->rx_rssi may be unreliable)
+            lastBeaconRSSI = rIf ? rIf->getRSSI() : p->rx_rssi;
+            LOG_DEBUG("TeamMode: beacon rx SNR=%.1f RSSI=%d", (double)p->rx_snr, (int)lastBeaconRSSI);
             if (disconnected) {
                 disconnected = false;
                 alertSilenced = false;
@@ -197,13 +230,22 @@ void TeamModeModule::handleTeamPacket(const meshtastic_MeshPacket *p)
 
 void TeamModeModule::playDisconnectedTone()
 {
-    // Two short beeps: B3 beep, pause, B3 beep
+    if (!config.device.buzzer_gpio)
+        return;
+
+    // Temporarily force buzzer_mode to ON so playTones() passes its guard,
+    // then restore the original setting after the alert.
+    auto savedMode = config.device.buzzer_mode;
+    config.device.buzzer_mode = meshtastic_Config_DeviceConfig_BuzzerMode_ALL_ENABLED;
+
     ToneDuration melody[] = {
         {NOTE_B3, 80},       // beep 1
-        {NOTE_SILENT, 100},   // silent pause
+        {NOTE_SILENT, 100},  // pause
         {NOTE_B3, 80},       // beep 2
     };
     playTones(melody, sizeof(melody) / sizeof(ToneDuration));
+
+    config.device.buzzer_mode = savedMode;
 }
 
 int32_t TeamModeModule::runOnce()
@@ -233,14 +275,21 @@ int32_t TeamModeModule::runOnce()
 
     case TEAM_UNJOINED:
     default:
+        // Check if scanning period expired
+        if (scanning && (millis() - scanStartTimeMs) >= SCAN_DURATION_MS) {
+            scanning = false;
+            LOG_INFO("TeamMode: scan completed, %d teams found", discoveredTeams.size());
+        }
         // Periodically clean stale discovered team entries
-        uint32_t now = millis();
-        for (auto it = discoveredTeams.begin(); it != discoveredTeams.end(); ) {
-            if (now - it->lastSeenMs > DISCOVERED_TEAM_STALE_MS) {
-                LOG_DEBUG("TeamMode: removing stale team 0x%08X", it->teamId);
-                it = discoveredTeams.erase(it);
-            } else {
-                ++it;
+        {
+            uint32_t now = millis();
+            for (auto it = discoveredTeams.begin(); it != discoveredTeams.end(); ) {
+                if (now - it->lastSeenMs > DISCOVERED_TEAM_STALE_MS) {
+                    LOG_DEBUG("TeamMode: removing stale team 0x%08X", it->teamId);
+                    it = discoveredTeams.erase(it);
+                } else {
+                    ++it;
+                }
             }
         }
         return BEACON_CHECK_INTERVAL_MS;

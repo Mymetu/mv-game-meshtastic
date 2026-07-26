@@ -3153,9 +3153,9 @@ void menuHandler::teamModeMenu()
 {
     if (!teamModeModule) return;
 
-    enum optionsNumbers { Back, CreateTeam, ScanTeams, LeaveTeam, Interval, Silence, enumEnd };
-    static const char *optionsArray[enumEnd] = {};
-    static int optionsEnumArray[enumEnd];
+    enum optionsNumbers { Back, CreateTeam, ScanTeams, LeaveTeam, Interval, Silence, JoinTeam, enumEnd };
+    static const char *optionsArray[14] = {};  // enough for Back + 3 actions + up to 10 teams
+    static int optionsEnumArray[14];
     int options = 0;
 
     optionsArray[options] = UI_STR("Back", "返回");
@@ -3167,8 +3167,22 @@ void menuHandler::teamModeMenu()
         optionsArray[options] = UI_STR("Create Team", "创建队伍");
         optionsEnumArray[options++] = CreateTeam;
 
-        optionsArray[options] = UI_STR("Scan Teams", "扫描队伍");
-        optionsEnumArray[options++] = ScanTeams;
+        if (teamModeModule->isScanning()) {
+            optionsArray[options] = UI_STR("Stop Scan", "停止扫描");
+            optionsEnumArray[options++] = ScanTeams;
+        } else {
+            optionsArray[options] = UI_STR("Scan Teams", "扫描队伍");
+            optionsEnumArray[options++] = ScanTeams;
+        }
+
+        // Show discovered teams directly in the menu
+        auto &teams = teamModeModule->getDiscoveredTeams();
+        static char teamLabels[10][32];
+        for (size_t i = 0; i < teams.size() && options < 13; i++) {
+            snprintf(teamLabels[i], sizeof(teamLabels[i]), "0x%08X", teams[i].teamId);
+            optionsArray[options] = teamLabels[i];
+            optionsEnumArray[options++] = JoinTeam + (int)i;  // encode index in enum value
+        }
     } else if (currentState == TEAM_LEADER) {
         // Show broadcast interval
         optionsArray[options] = UI_STR("Interval", "广播间隔");
@@ -3200,9 +3214,27 @@ void menuHandler::teamModeMenu()
             menuQueue = MenuNone;
             screen->runNow();
         } else if (selected == ScanTeams) {
-            teamModeModule->clearDiscoveredTeams();
-            // Scanner is always running (UNJOINED) — go to scan screen
+            if (teamModeModule->isScanning()) {
+                teamModeModule->stopScan();
+                menuQueue = MenuNone;
+                screen->runNow();
+            } else {
+                teamModeModule->startScan();
+                menuQueue = MenuNone;
+                screen->runNow();
+            }
+        } else if (selected == enumEnd) {
+            // View Teams → open scan menu with discovered teams
             menuHandler::menuQueue = menuHandler::TeamModeScan;
+            screen->runNow();
+        } else if (selected >= JoinTeam) {
+            // Join a discovered team directly
+            int idx = selected - JoinTeam;
+            auto &teams = teamModeModule->getDiscoveredTeams();
+            if (idx >= 0 && idx < (int)teams.size()) {
+                teamModeModule->joinTeam(teams[idx].teamId, teams[idx].leaderNodeNum);
+            }
+            menuQueue = MenuNone;
             screen->runNow();
         } else if (selected == LeaveTeam) {
             teamModeModule->leaveTeam();
@@ -3250,11 +3282,11 @@ void menuHandler::teamModeScanMenu()
         return;
     }
 
-    // Build dynamic list
+    // Build dynamic list (static to survive banner async display)
     int count = list.size();
-    int maxCount = count > 8 ? 8 : count; // max 8 entries
-    const char *optionsArray[10] = {};
-    int optionsEnumArray[10];
+    int maxCount = count > 8 ? 8 : count;
+    static const char *optionsArray[10] = {};
+    static int optionsEnumArray[10];
     int opts = 0;
 
     optionsArray[opts] = UI_STR("Back", "返回");

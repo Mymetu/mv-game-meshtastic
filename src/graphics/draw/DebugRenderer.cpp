@@ -851,10 +851,29 @@ void drawTeamModeScreen(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t
     char buf[64];
 
     switch (currentState) {
-    case TEAM_UNJOINED:
-        display->drawString(textX, getTextPositions(display)[line++],
-                            UI_STR("Status: Not Joined", "组队状态：未加入"));
+    case TEAM_UNJOINED: {
+        if (teamModeModule->isScanning()) {
+            uint32_t remaining = teamModeModule->getScanRemainingMs();
+            uint32_t secs = (remaining + 999) / 1000;
+            snprintf(buf, sizeof(buf), UI_STR("Scanning... %ds left", "扫描中... 剩余%d秒"), (int)secs);
+            display->drawString(textX, getTextPositions(display)[line++], buf);
+
+            auto &teams = teamModeModule->getDiscoveredTeams();
+            if (!teams.empty()) {
+                for (size_t i = 0; i < teams.size() && line < 6; i++) {
+                    snprintf(buf, sizeof(buf), "0x%08X", teams[i].teamId);
+                    display->drawString(textX, getTextPositions(display)[line++], buf);
+                }
+            } else {
+                display->drawString(textX, getTextPositions(display)[line++],
+                                    UI_STR("No teams found yet", "暂未发现队伍"));
+            }
+        } else {
+            display->drawString(textX, getTextPositions(display)[line++],
+                                UI_STR("Status: Not Joined", "组队状态：未加入"));
+        }
         break;
+    }
 
     case TEAM_LEADER:
         display->drawString(textX, getTextPositions(display)[line++],
@@ -881,15 +900,26 @@ void drawTeamModeScreen(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t
             display->drawString(textX, getTextPositions(display)[line++], buf);
             display->drawString(textX, getTextPositions(display)[line++],
                                 UI_STR("Comm: OK", "通讯正常"));
+
+            uint32_t ageMs = teamModeModule->getLastBeaconAge();
+            if (ageMs != UINT32_MAX) {
+                uint32_t ageSec = ageMs / 1000;
+                if (ageSec < 60) {
+                    snprintf(buf, sizeof(buf), "Last HB: %us ago", (unsigned int)ageSec);
+                } else {
+                    snprintf(buf, sizeof(buf), "Last HB: %um ago", (unsigned int)(ageSec / 60));
+                }
+                display->drawString(textX, getTextPositions(display)[line++], buf);
+
+                snprintf(buf, sizeof(buf), "RSSI: %d  SNR: %.1f",
+                         (int)teamModeModule->getLastBeaconRSSI(),
+                         (double)teamModeModule->getLastBeaconSNR());
+                display->drawString(textX, getTextPositions(display)[line++], buf);
+            }
         }
         break;
     }
 
-    // Footer hint
-    display->setTextAlignment(TEXT_ALIGN_CENTER);
-    display->drawString(display->getWidth() / 2 + x, display->getHeight() - FONT_HEIGHT_SMALL,
-                        UI_STR("SELECT for menu", "按确定选项"));
-    display->setTextAlignment(TEXT_ALIGN_LEFT);
 }
 
 void drawTeamModeFrame(OLEDDisplay *display, OLEDDisplayUiState *state, int16_t x, int16_t y)

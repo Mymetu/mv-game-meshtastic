@@ -20,6 +20,21 @@
 #define default_broadcast_smart_minimum_interval_secs 5 * 60
 #define min_default_broadcast_interval_secs 60 * 60
 #define min_default_broadcast_smart_minimum_interval_secs 5 * 60
+
+#ifdef GPS_BROADCAST_1MIN
+// 1-minute GPS broadcast mode: GPS always on (update every 10s), broadcast every 60s
+#undef default_gps_update_interval
+#define default_gps_update_interval 10                      // <= 10s keeps GPS always powered on
+#undef default_broadcast_interval_secs
+#define default_broadcast_interval_secs 60                  // broadcast position every 60 seconds
+#undef min_default_broadcast_interval_secs
+#define min_default_broadcast_interval_secs 60              // allow 60s broadcast through the clamp
+#undef min_default_broadcast_smart_minimum_interval_secs
+#define min_default_broadcast_smart_minimum_interval_secs 30 // smart broadcast min 30s
+#undef default_broadcast_smart_minimum_interval_secs
+#define default_broadcast_smart_minimum_interval_secs 60     // smart broadcast default 60s
+#endif
+
 #define default_wait_bluetooth_secs IF_ROUTER(1, 60)
 #define default_sds_secs IF_ROUTER(ONE_DAY, UINT32_MAX) // Default to forever super deep sleep
 #define default_ls_secs IF_ROUTER(ONE_DAY, 5 * 60)

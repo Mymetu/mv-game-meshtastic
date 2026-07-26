@@ -148,6 +148,9 @@ void playGPSDisableBeep()
 
 void playStartMelody()
 {
+#ifdef DISABLE_STARTUP_TONE
+    return;
+#endif
     ToneDuration melody[] = {{NOTE_FS3, DURATION_1_8}, {NOTE_AS3, DURATION_1_8}, {NOTE_CS4, DURATION_1_4}};
     playTones(melody, sizeof(melody) / sizeof(ToneDuration));
 }

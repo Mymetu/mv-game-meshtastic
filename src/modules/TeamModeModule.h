@@ -29,11 +29,19 @@ class TeamModeModule : private concurrency::OSThread
     bool isDisconnected() const { return disconnected; }
     bool isAlertSilenced() const { return alertSilenced; }
     uint32_t getLastBeaconAge() const;
+    float getLastBeaconSNR() const { return lastBeaconSNR; }
+    int32_t getLastBeaconRSSI() const { return lastBeaconRSSI; }
     uint32_t getBroadcastIntervalMs() const { return broadcastIntervalMs; }
 
     // Discovered teams list
     const std::vector<DiscoveredTeam> &getDiscoveredTeams() { return discoveredTeams; }
     void clearDiscoveredTeams() { discoveredTeams.clear(); }
+
+    // Scanning
+    void startScan();
+    void stopScan() { scanning = false; }
+    bool isScanning() const { return scanning; }
+    uint32_t getScanRemainingMs() const;
 
     // Actions
     void createTeam();
@@ -64,6 +72,10 @@ class TeamModeModule : private concurrency::OSThread
     static bool alertSilenced;
     static uint32_t broadcastIntervalMs;        // default 15000ms
     static std::vector<DiscoveredTeam> discoveredTeams;
+    static bool scanning;
+    static uint32_t scanStartTimeMs;
+    static float lastBeaconSNR;
+    static int32_t lastBeaconRSSI;
 };
 
 extern TeamModeModule *teamModeModule;
