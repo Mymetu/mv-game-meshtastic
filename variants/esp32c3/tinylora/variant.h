@@ -38,7 +38,9 @@
 #define BUTTON_PIN 9
 #define LED_PIN 0
 #define LED_STATE_ON 1
+#ifndef LED_POWER
 #define LED_POWER LED_PIN
+#endif
 
 #define HAS_SCREEN 0
 // GPS
@@ -94,7 +96,9 @@
 #define BUTTON_PIN 9
 #define LED_PIN 0
 #define LED_STATE_ON 1
+#ifndef LED_POWER
 #define LED_POWER LED_PIN
+#endif
 
 #define HAS_SCREEN 0
 

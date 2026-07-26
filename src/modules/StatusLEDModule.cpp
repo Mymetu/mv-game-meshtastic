@@ -156,6 +156,13 @@ int32_t StatusLEDModule::runOnce()
     io.digitalWrite(PCA_LED_ENABLE, CHARGE_LED_state);
 #endif
 #ifdef LED_POWER
+    // Ensure GPIO is still configured as OUTPUT (defensive; some GPIOs like GPIO0
+    // on ESP32-C3 may be reconfigured by other subsystems during initialization)
+    static bool ledPinConfigured = false;
+    if (!ledPinConfigured) {
+        pinMode(LED_POWER, OUTPUT);
+        ledPinConfigured = true;
+    }
     digitalWrite(LED_POWER, CHARGE_LED_state);
 #endif
 #ifdef LED_PAIRING
@@ -198,6 +205,7 @@ void StatusLEDModule::setPowerLED(bool LEDon)
     io.digitalWrite(PCA_LED_ENABLE, LEDon);
 #endif
 #ifdef LED_POWER
+    pinMode(LED_POWER, OUTPUT);
     digitalWrite(LED_POWER, LEDon);
 #endif
 #ifdef LED_PAIRING
