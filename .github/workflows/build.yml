@@ -110,7 +110,7 @@ jobs:
           done
 
       - name: Build ${{ matrix.env }}
-        run: script -q -e -c "pio run -e ${{ matrix.env }}" /dev/null
+        run: pio run -e ${{ matrix.env }}
 
       - name: Upload firmware to Release
         if: success() && github.event_name != 'pull_request'
