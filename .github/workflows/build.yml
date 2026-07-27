@@ -110,9 +110,7 @@ jobs:
           done
 
       - name: Build ${{ matrix.env }}
-        run: pio run -e ${{ matrix.env }}
-        env:
-          PYTHONUNBUFFERED: 1
+        run: script -q -e -c "pio run -e ${{ matrix.env }}" /dev/null
 
       - name: Upload firmware to Release
         if: success() && github.event_name != 'pull_request'
