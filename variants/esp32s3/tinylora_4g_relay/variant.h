@@ -10,9 +10,8 @@ extern "C" {
 #define LED_STATE_ON 1
 
 /* Button (BOOT) */
-#define BUTTON_PIN (0)
-#define BUTTON_ACTIVE_LOW true
-#define BUTTON_ACTIVE_PULLUP true
+#define BUTTON_PIN 0
+#define BUTTON_NEED_PULLUP
 
 /* LoRa (LLCC68 / SX1262 / SX1268 with RXEN) */
 #define USE_LLCC68
@@ -44,6 +43,11 @@ extern "C" {
 #define BATTERY_PIN 1
 #define ADC_CHANNEL ADC1_GPIO1_CHANNEL
 #define ADC_MULTIPLIER 2.0f
+
+/* I2C (reserved, not used on relay) */
+#define WIRE_INTERFACES_COUNT 1
+#define I2C_SDA 18
+#define I2C_SCL 17
 
 #ifdef __cplusplus
 }
