@@ -26,6 +26,7 @@ jobs:
       matrix:
         env:
           - tinylora_4g_relay     # ESP32-S3 N16R8
+          - tinylora_v2_22s       # ESP32-C3
     steps:
       - uses: actions/checkout@v4
 
