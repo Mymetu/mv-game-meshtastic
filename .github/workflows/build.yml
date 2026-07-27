@@ -109,23 +109,20 @@ jobs:
       - name: Build ${{ matrix.env }}
         run: pio run -e ${{ matrix.env }}
 
-      - name: Upload ${{ matrix.env }} build outputs
-        if: success()
-        uses: actions/upload-artifact@v4
+      - name: Upload firmware to Release
+        if: success() && github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
         with:
-          name: ${{ matrix.env }}
-          # Ship ONLY the user-facing build outputs: prebuilt images,
-          # debug symbols, link maps, static libs, and PIO metadata JSON.
-          # Drop intermediate cruft (depfiles, framework copies, src/ symlinks,
-          # CMakeFiles, .gitignore placeholders, etc.) so the zip is small.
-          # Note: GH Actions always wraps uploads in a zip �?there is no
-          # built-in way to expose individual files. If true direct-download
-          # is needed, switch to a gh-release-based workflow.
-          path: |
-            .pio/build/${{ matrix.env }}/*.bin
-            .pio/build/${{ matrix.env }}/*.elf
-            .pio/build/${{ matrix.env }}/*.map
-            .pio/build/${{ matrix.env }}/*.a
-            .pio/build/${{ matrix.env }}/*.json
-          if-no-files-found: error
-          retention-days: 1
+          tag_name: firmware-${{ matrix.env }}
+          name: "${{ matrix.env }} firmware (auto-built)"
+          body: |
+            Auto-built firmware for **${{ matrix.env }}**.
+            Commit: ${{ github.sha }}
+            Branch: ${{ github.ref_name }}
+          files: |
+            .pio/build/${{ matrix.env }}/firmware-${{ matrix.env }}-*.factory.bin
+            .pio/build/${{ matrix.env }}/firmware-${{ matrix.env }}-*.bin
+            .pio/build/${{ matrix.env }}/littlefs-${{ matrix.env }}-*.bin
+          make_latest: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
