@@ -58,13 +58,12 @@ jobs:
           rm mklittlefs.tar.gz
           mklittlefs --version || echo "mklittlefs installed (binary on PATH)"
 
-      - name: Pre-install PlatformIO platform (so framework is on disk before patch)
+      - name: Pre-install framework (so it's on disk before patch)
         run: |
-          # Force PIO to install the espressif32 platform + framework now, so
-          # the next step can patch framework library.properties. PIO normally
-          # lazy-installs on the first `pio run`, but we need framework files
-          # on disk before then.
-          pio pkg install -g -p platformio/espressif32@6.13.0 || true
+          # Install environment dependencies including the custom framework.
+          # This downloads framework-arduinoespressif32 to ~/.platformio/packages
+          # so the next step can patch its library.properties.
+          pio pkg install -e ${{ matrix.env }}
 
       - name: Patch framework FS/LittleFS/SPIFFS architectures for S3/C3 builds
         run: |
