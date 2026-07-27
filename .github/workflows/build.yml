@@ -54,6 +54,7 @@ jobs:
           curl -fsSL -o mklittlefs.tar.gz \
             "https://github.com/earlephilhower/mklittlefs/releases/download/4.1.0/x86_64-linux-gnu-mklittlefs-42acb97.tar.gz"
           tar -xzf mklittlefs.tar.gz
+          chmod +x mklittlefs
           sudo mv mklittlefs /usr/local/bin/
           rm mklittlefs.tar.gz
           mklittlefs --version || echo "mklittlefs installed (binary on PATH)"
