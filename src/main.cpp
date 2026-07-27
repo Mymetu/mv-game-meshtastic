@@ -244,21 +244,32 @@ const char *getDeviceName()
 
     getMacAddr(dmac);
 
-    // Meshtastic_ab3c or Shortname_abcd
     static char name[20];
+
+#if defined(TINYLORA) || defined(GAT562)
+    // BLE name is derived from owner.macaddr (persisted in device.proto).
+    // owner.macaddr is only set on first boot and never overwritten,
+    // so the BLE name stays stable across flash-without-erase and MAC changes.
+    snprintf(name, sizeof(name), "%s_%02x%02x",
+#if defined(GAT562)
+             "GAT562",
+#elif defined(TINYLORA)
+             "TinyLora",
+#endif
+             owner.macaddr[4], owner.macaddr[5]);
+    LOG_INFO("BLE name: %s (macaddr[4:5]=%02x%02x, runtime MAC=%02x%02x)",
+             name, owner.macaddr[4], owner.macaddr[5], dmac[4], dmac[5]);
+#else
+    // Original logic for other device types
     snprintf(name, sizeof(name), "%02x%02x", dmac[4], dmac[5]);
-    // if the shortname exists and is NOT the new default of ab3c, use it for BLE name.
     if (strcmp(owner.short_name, name) != 0) {
         snprintf(name, sizeof(name), "%s_%02x%02x", owner.short_name, dmac[4], dmac[5]);
     } else {
-#if defined(GAT562)
-        snprintf(name, sizeof(name), "GAT562_%02x%02x", dmac[4], dmac[5]);
-#elif defined(TINYLORA)
-        snprintf(name, sizeof(name), "TinyLora_%02x%02x", dmac[4], dmac[5]);
-#else
         snprintf(name, sizeof(name), "MeshCN_%02x%02x", dmac[4], dmac[5]);
-#endif
     }
+    LOG_INFO("BLE name: %s", name);
+#endif
+
     return name;
 }
 

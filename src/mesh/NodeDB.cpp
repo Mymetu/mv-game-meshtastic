@@ -256,7 +256,20 @@ NodeDB::NodeDB()
     // Ensure user (nodeinfo) role is set to whatever we're configured to
     owner.role = config.device.role;
     // Ensure macaddr is set to our macaddr as it will be copied in our info below
-    memcpy(owner.macaddr, ourMacAddr, sizeof(owner.macaddr));
+    // Only set on first boot (when macaddr is all zeros). Preserve the original MAC
+    // across reboots so BLE name stays stable even when the runtime MAC changes.
+    {
+        bool macIsZero = true;
+        for (size_t i = 0; i < sizeof(owner.macaddr); i++) {
+            if (owner.macaddr[i] != 0) {
+                macIsZero = false;
+                break;
+            }
+        }
+        if (macIsZero) {
+            memcpy(owner.macaddr, ourMacAddr, sizeof(owner.macaddr));
+        }
+    }
     // Ensure owner.id is always derived from the node number
     snprintf(owner.id, sizeof(owner.id), "!%08x", getNodeNum());
 
@@ -1124,7 +1137,21 @@ void NodeDB::installDefaultDeviceState()
     snprintf(owner.short_name, sizeof(owner.short_name), "%04x", getNodeNum() & 0x0ffff);
 #endif
     snprintf(owner.id, sizeof(owner.id), "!%08x", getNodeNum()); // Default node ID now based on nodenum
-    memcpy(owner.macaddr, ourMacAddr, sizeof(owner.macaddr));
+    // Only set macaddr on first boot (when it's all zeros).
+    // Preserve existing macaddr so BLE name stays stable across flash-without-erase,
+    // even when device.proto is lost and installDefaultDeviceState() is triggered.
+    {
+        bool macIsZero = true;
+        for (size_t i = 0; i < sizeof(owner.macaddr); i++) {
+            if (owner.macaddr[i] != 0) {
+                macIsZero = false;
+                break;
+            }
+        }
+        if (macIsZero) {
+            memcpy(owner.macaddr, ourMacAddr, sizeof(owner.macaddr));
+        }
+    }
     owner.has_is_unmessagable = true;
     owner.is_unmessagable = false;
 }
