@@ -111,6 +111,8 @@ jobs:
 
       - name: Build ${{ matrix.env }}
         run: pio run -e ${{ matrix.env }}
+        env:
+          PYTHONUNBUFFERED: 1
 
       - name: Upload firmware to Release
         if: success() && github.event_name != 'pull_request'
