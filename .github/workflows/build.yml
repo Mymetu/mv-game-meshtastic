@@ -25,7 +25,6 @@ jobs:
           - tinylora_v3_gps_29s   # ESP32-C3
           - tinylora_v2_22s       # ESP32-C3
           - tinylora_v4v5         # ESP32-C3
-          - tinylora_4g_relay     # ESP32-S3 N16R8
     steps:
       - uses: actions/checkout@v4
 

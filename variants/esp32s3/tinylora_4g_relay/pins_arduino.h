@@ -6,6 +6,10 @@
 #define USB_VID 0x303a
 #define USB_PID 0x1001
 
+// No I2C on this board
+static const uint8_t SDA = -1;
+static const uint8_t SCL = -1;
+
 // Default SPI mapped to Radio
 static const uint8_t MISO = 3;
 static const uint8_t SCK = 5;
