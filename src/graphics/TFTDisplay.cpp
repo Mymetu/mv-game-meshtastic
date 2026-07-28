@@ -568,7 +568,11 @@ class LGFX : public lgfx::LGFX_Device
 #endif
             cfg.dummy_read_bits = 1;                      // Number of bits for dummy read before non-pixel data read
             cfg.readable = true;                          // Set to true if data can be read
+#ifdef TFT_INVERT
+            cfg.invert = TFT_INVERT;                      // Per-variant override for color inversion
+#else
             cfg.invert = true;                            // Set to true if the light/darkness of the panel is reversed
+#endif
             cfg.rgb_order = false;                        // Set to true if the panel's red and blue are swapped
             cfg.dlen_16bit =
                 false;             // Set to true for panels that transmit data length in 16-bit units with 16-bit parallel or SPI
