@@ -33,7 +33,6 @@ extern "C" {
 // #define USE_ST7789
 #define ST7789_SPI_HOST SPI3_HOST
 #define DISPLAY_320_240
-#define TFT_INVERT 0          // New 2.4" panel: no color inversion (old 2.0" panel needed invert=true)
 
 #undef OLED_CJK_SIZE
 #define OLED_CJK_SIZE 16
