@@ -25,7 +25,14 @@ jobs:
       fail-fast: false
       matrix:
         env:
-          - tinylora_mv_30_33s    # ESP32-S3 240x320 landscape (testing new 2.4" screen)
+          - tinylora_v2_22s       # ESP32-C3
+          - tinylora_v2_29s       # ESP32-C3
+          - tinylora_v3_gps_29s   # ESP32-C3
+          - tinylora_v3_gps_22s   # ESP32-C3
+          - tinylora_v3_i2c_29s   # ESP32-C3
+          - tinylora_v3_i2c_22s   # ESP32-C3
+          - tinylora_v4v5         # ESP32-C3
+          - tinylora_mv_zhcn      # ESP32-C3
     steps:
       - uses: actions/checkout@v4
 

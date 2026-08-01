@@ -1124,9 +1124,9 @@ void NodeDB::installDefaultDeviceState()
     snprintf(owner.long_name, sizeof(owner.long_name), (const char *)USERPREFS_CONFIG_OWNER_LONG_NAME);
 #else
 #if defined(GAT562)
-    snprintf(owner.long_name, sizeof(owner.long_name), "GAT562 %04x", getNodeNum() & 0x0ffff);
+    snprintf(owner.long_name, sizeof(owner.long_name), "GAT562_%04x", getNodeNum() & 0x0ffff);
 #elif defined(TINYLORA)
-    snprintf(owner.long_name, sizeof(owner.long_name), "TinyLora %04x", getNodeNum() & 0x0ffff);
+    snprintf(owner.long_name, sizeof(owner.long_name), "TinyLora_%04x", getNodeNum() & 0x0ffff);
 #else
     snprintf(owner.long_name, sizeof(owner.long_name), "NeshCN %04x", getNodeNum() & 0x0ffff);
 #endif
