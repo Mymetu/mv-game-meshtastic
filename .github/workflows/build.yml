@@ -1,6 +1,7 @@
 name: Build Tinylora Variants
 
-# Builds the two tinylora variants (S3 game + C3 zhcn) on every push / PR.
+# Builds all tinylora variants (C3) on every push / PR and uploads all
+# firmware assets into a single unified Release (tag: firmware).
 # ~3-5 min per build. Use the workflow_dispatch trigger for manual runs.
 
 on:
@@ -18,21 +19,37 @@ permissions:
   contents: write
 
 jobs:
+  # Create the unified release first so all matrix jobs upload into it.
+  create-release:
+    name: Create unified release
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create / update Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: firmware
+          name: "TinyLora firmware (auto-built)"
+          body: |
+            Auto-built firmware for all TinyLora variants.
+            Commit: ${{ github.sha }}
+            Branch: ${{ github.ref_name }}
+          update_release_body: true
+          make_latest: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   build:
     name: ${{ matrix.env }}
     runs-on: ubuntu-latest
+    needs: create-release
+    # Run even when create-release is skipped (PR builds only compile, no upload)
+    if: always()
     strategy:
       fail-fast: false
       matrix:
         env:
-          - tinylora_v2_22s       # ESP32-C3
-          - tinylora_v2_29s       # ESP32-C3
-          - tinylora_v3_gps_29s   # ESP32-C3
-          - tinylora_v3_gps_22s   # ESP32-C3
-          - tinylora_v3_i2c_29s   # ESP32-C3
-          - tinylora_v3_i2c_22s   # ESP32-C3
-          - tinylora_v4v5         # ESP32-C3
-          - tinylora_mv_zhcn      # ESP32-C3
+          - tinylora_v2_22s_oled  # ESP32-C3 + SSD1306 OLED
     steps:
       - uses: actions/checkout@v4
 
@@ -123,16 +140,11 @@ jobs:
         if: success() && github.event_name != 'pull_request'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: firmware-${{ matrix.env }}
-          name: "${{ matrix.env }} firmware (auto-built)"
-          body: |
-            Auto-built firmware for **${{ matrix.env }}**.
-            Commit: ${{ github.sha }}
-            Branch: ${{ github.ref_name }}
+          tag_name: firmware
+          update_release_body: false
           files: |
             .pio/build/${{ matrix.env }}/firmware-${{ matrix.env }}-*.factory.bin
             .pio/build/${{ matrix.env }}/firmware-${{ matrix.env }}-*.bin
             .pio/build/${{ matrix.env }}/littlefs-${{ matrix.env }}-*.bin
-          make_latest: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

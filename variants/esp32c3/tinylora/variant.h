@@ -4,7 +4,19 @@
 #define LED_PIN 2
 #define LED_STATE_ON 1
 
+#if defined(TINYLORA_V2_OLED)
+// SSD1306 OLED (same panel as MV) via I2C: IO0=SCL, IO1=SDA
+#define HAS_SCREEN 1
+#define USE_SSD1306
+
+#define HAS_I2C 1
+#define WIRE_INTERFACES_COUNT (1)
+#define I2C_SDA 1
+#define I2C_SCL 0
+#else
 #define HAS_SCREEN 0
+#endif
+
 #define HAS_GPS 1
 #undef GPS_RX_PIN 21
 #undef GPS_TX_PIN 20
