@@ -259,6 +259,42 @@ void GamesModule::draw(OLEDDisplay *display, int16_t x, int16_t y)
 
 #endif // ENABLE_GAMES_FRAME
 
+#ifndef ENABLE_GAMES_FRAME
+// Stub implementations for builds without ENABLE_GAMES_FRAME.
+// gamesModule stays nullptr (see main.cpp), so these are never actually called,
+// but the symbols must exist so Screen.cpp / MenuHandler.cpp / DebugRenderer.cpp
+// can link against the class without extra #ifdefs.
+GamesModule::GamesModule() : snake(), flappy(), activeGame(None), state(Idle), lastTickAt(0), lastGameState(0) {}
+
+int GamesModule::getScore() const
+{
+    return 0;
+}
+
+void GamesModule::startSnake() {}
+
+void GamesModule::startFlappy() {}
+
+void GamesModule::pause() {}
+
+void GamesModule::resume() {}
+
+void GamesModule::togglePause() {}
+
+void GamesModule::quit() {}
+
+void GamesModule::restart() {}
+
+bool GamesModule::handleInput(input_broker_event ev)
+{
+    return false;
+}
+
+void GamesModule::tick(uint32_t nowMs) {}
+
+void GamesModule::draw(OLEDDisplay *display, int16_t x, int16_t y) {}
+#endif // !ENABLE_GAMES_FRAME
+
 // Global pointer is defined unconditionally so external code (Screen.cpp /
 // DebugRenderer.cpp / MenuHandler.cpp) can always reference it without #ifdefs.
 // The pointer simply stays null in builds where the games frame is disabled.

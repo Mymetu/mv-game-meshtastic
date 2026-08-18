@@ -776,10 +776,12 @@ void setup()
 #endif
 
 #if HAS_SCREEN
+#ifdef ENABLE_GAMES_FRAME
     // Always create the games module; it owns zero resources when Idle.
     if (!gamesModule) {
         gamesModule = new GamesModule();
     }
+#endif
 #ifdef ENABLE_TEAM_MODE
     if (!teamModeModule) {
         teamModeModule = new TeamModeModule();

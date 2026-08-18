@@ -216,3 +216,12 @@ void SnakeGame::speedUp()
 }
 
 #endif // ENABLE_GAMES_FRAME
+
+#ifndef ENABLE_GAMES_FRAME
+// Stub constructor for builds without ENABLE_GAMES_FRAME.
+// GamesModule still contains a SnakeGame member, so this symbol must exist.
+SnakeGame::SnakeGame()
+    : length(0), dirX(0), dirY(0), foodX(0), foodY(0), state(Idle), score(0), stepMs(0)
+{
+}
+#endif // !ENABLE_GAMES_FRAME

@@ -228,3 +228,13 @@ void FlappyBird::draw(OLEDDisplay *display, int16_t x, int16_t y)
 }
 
 #endif // ENABLE_GAMES_FRAME
+
+#ifndef ENABLE_GAMES_FRAME
+// Stub constructor for builds without ENABLE_GAMES_FRAME.
+// GamesModule still contains a FlappyBird member, so this symbol must exist.
+FlappyBird::FlappyBird()
+    : birdX(0), birdY(0), velocity(0), pipeHead(0),
+      score(0), bestScore(0), stepMs(0), spawnTimer(0), started(false)
+{
+}
+#endif // !ENABLE_GAMES_FRAME
