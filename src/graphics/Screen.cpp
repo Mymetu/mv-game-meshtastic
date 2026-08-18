@@ -1885,7 +1885,9 @@ int Screen::handleInputEvent(const InputEvent *event)
                 } else if (this->ui->getUiState()->currentFrame == framesetInfo.positions.system) {
                     menuHandler::systemBaseMenu();
                 } else if (this->ui->getUiState()->currentFrame == framesetInfo.positions.game) {
+#ifdef ENABLE_GAMES_FRAME
                     menuHandler::gameMenu();
+#endif
 #ifdef ENABLE_TEAM_MODE
                 } else if (this->ui->getUiState()->currentFrame == framesetInfo.positions.teamMode) {
                     menuHandler::teamModeMenu();
